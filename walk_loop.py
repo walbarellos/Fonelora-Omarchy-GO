@@ -15,46 +15,16 @@ import time
 import zmq
 
 PORT = 17878
+ROUTES_FILE = Path(__file__).resolve().parent / "routes_data.json"
 
-# Coordenada atual onde você está
-START_LAT = -9.977835
-START_LON = -67.825947
+# Coordenada da sua casa em Rio Branco (Travessa Marajá, Preventório)
+HOME = (-9.975487, -67.821538)
 
-# Grade de quarteirões e ruas reais da região residencial (Acre / Rio Branco)
-# Criando 30 waypoints interligados em circuito fechado (ruas e avenidas locais)
-# delta_lat: ~0.0009 = ~100m, delta_lon: ~0.0009 = ~100m
-WAYPOINTS = [
-    (-9.977835, -67.825947), # 0: Início
-    (-9.977200, -67.825900), # 1: Norte pela rua principal
-    (-9.976500, -67.825850), # 2: Cruzamento norte
-    (-9.976520, -67.825100), # 3: Virando a leste
-    (-9.976540, -67.824300), # 4: Praça / Pokéstop próximo
-    (-9.977100, -67.824250), # 5: Sul pelo quarteirão leste
-    (-9.977800, -67.824200), # 6: Rua paralela ao sul
-    (-9.978400, -67.824150), # 7: Esquina sul
-    (-9.978380, -67.824850), # 8: Oeste retornando
-    (-9.978350, -67.825950), # 9: Cruzamento sul
-    (-9.978900, -67.825980), # 10: Extensão sul
-    (-9.979400, -67.826000), # 11: Final da avenida
-    (-9.979420, -67.826600), # 12: Oeste residencial
-    (-9.978800, -67.826620), # 13: Subindo pelo quarteirão oeste
-    (-9.978200, -67.826650), # 14: Meio da rua
-    (-9.977500, -67.826700), # 15: Próximo à praça oeste
-    (-9.976800, -67.826750), # 16: Esquina noroeste
-    (-9.976200, -67.826800), # 17: Extensão noroeste
-    (-9.976180, -67.826000), # 18: Leste rumo à avenida
-    (-9.975500, -67.825950), # 19: Mais ao norte (centro do bairro)
-    (-9.975480, -67.825200), # 20: Quarteirão nordeste
-    (-9.975450, -67.824500), # 21: Perto de pokéstops
-    (-9.976000, -67.824450), # 22: Sul
-    (-9.976600, -67.824400), # 23: Retorno intermediário
-    (-9.977300, -67.824900), # 24: Diagonal suave
-    (-9.977900, -67.825300), # 25: Aproximação
-    (-9.978400, -67.825600), # 26: Esquina sul 2
-    (-9.978100, -67.826200), # 27: Oeste 2
-    (-9.977400, -67.826150), # 28: Norte 2
-    (-9.977835, -67.825947), # 29: Fechamento de ciclo perfeito!
-]
+def load_routes():
+    if ROUTES_FILE.is_file():
+        with open(ROUTES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
 def distance_meters(lat1, lon1, lat2, lon2):
     R = 6371000 # metros
@@ -66,7 +36,19 @@ def distance_meters(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c
 
-def run_loop():
+def run_loop(route_name: str = "tour_centro", speed_mps: float = 1.3):
+    routes = load_routes()
+    if route_name not in routes:
+        print(f"Rota '{route_name}' não encontrada. Opções disponíveis: {list(routes.keys())}")
+        route_name = list(routes.keys())[0] if routes else None
+
+    if not route_name:
+        print("Erro: Nenhuma rota encontrada em routes_data.json")
+        return
+
+    waypoints = [tuple(pt) for pt in routes[route_name]]
+    total_km = sum(distance_meters(waypoints[i][0], waypoints[i][1], waypoints[i+1][0], waypoints[i+1][1]) for i in range(len(waypoints)-1)) / 1000.0
+
     ctx = zmq.Context()
     sock = ctx.socket(zmq.REQ)
     sock.setsockopt(zmq.RCVTIMEO, 1500)
@@ -74,30 +56,37 @@ def run_loop():
     sock.setsockopt(zmq.LINGER, 0)
     sock.connect(f"tcp://127.0.0.1:{PORT}")
 
-    print(f"[WalkLoop] Iniciando circuito seguro de 30 waypoints a 1.2 m/s...")
-    print(f"[WalkLoop] Conectado em tcp://127.0.0.1:{PORT}")
-
-    speed_mps = 1.2 # ~4.3 km/h (velocidade ideal de caminhada humana, choca ovos e pega doces)
     step_time = 0.8 # intervalo de atualização em segundos
-    step_dist = speed_mps * step_time # ~0.96 metros por passo
+    step_dist = speed_mps * step_time
+
+    print("=" * 60)
+    print(f"🎮 Fonelora Omarchy GO — Circuito Automático de Ruas Reais")
+    print(f"🏠 Ponto de Partida e Chegada: Sua Casa (-9.975487, -67.821538)")
+    print(f"🗺️  Rota Ativa: [{route_name}]")
+    print(f"📍 Total de Waypoints: {len(waypoints)} pontos conectados pelas ruas")
+    print(f"📏 Distância total do circuito: {total_km:.2f} km")
+    print(f"🚶 Velocidade de caminhada: {speed_mps} m/s (~{speed_mps * 3.6:.1f} km/h)")
+    print(f"🔌 Canal ZeroMQ: tcp://127.0.0.1:{PORT}")
+    print("=" * 60)
 
     loop_count = 0
     while True:
         loop_count += 1
-        print(f"\n--- Iniciando Volta #{loop_count} do Circuito ---")
-        for i in range(len(WAYPOINTS) - 1):
-            p1 = WAYPOINTS[i]
-            p2 = WAYPOINTS[i+1]
+        print(f"\n🏃 >>> Iniciando Volta #{loop_count} do Circuito [{route_name}] <<<")
+        for i in range(len(waypoints) - 1):
+            p1 = waypoints[i]
+            p2 = waypoints[i+1]
             total_dist = distance_meters(p1[0], p1[1], p2[0], p2[1])
             steps = max(1, int(total_dist / step_dist))
 
-            print(f"Trecho {i+1}/{len(WAYPOINTS)-1}: {total_dist:.1f}m ({steps} passos)")
+            if i % 10 == 0 or i == len(waypoints) - 2:
+                print(f"[{i+1}/{len(waypoints)-1}] Seguindo pela via: dist={total_dist:.1f}m ({steps} passos)")
 
             for s in range(steps + 1):
                 fraction = s / steps
-                # Interpolação com micro-variação natural humana (jitter < 0.2m)
-                jitter_lat = (random.random() - 0.5) * 0.000003
-                jitter_lon = (random.random() - 0.5) * 0.000003
+                # Interpolação com micro-variação humana natural
+                jitter_lat = (random.random() - 0.5) * 0.000002
+                jitter_lon = (random.random() - 0.5) * 0.000002
                 cur_lat = p1[0] + (p2[0] - p1[0]) * fraction + jitter_lat
                 cur_lon = p1[1] + (p2[1] - p1[1]) * fraction + jitter_lon
 
@@ -109,7 +98,7 @@ def run_loop():
                 try:
                     sock.send_string(payload)
                     _ = sock.recv_string()
-                except Exception as e:
+                except Exception:
                     sock.close()
                     sock = ctx.socket(zmq.REQ)
                     sock.setsockopt(zmq.RCVTIMEO, 1500)
@@ -120,4 +109,10 @@ def run_loop():
                 time.sleep(step_time)
 
 if __name__ == "__main__":
-    run_loop()
+    # Permite passar o nome da rota e velocidade por linha de comando
+    # Exemplo: python walk_loop.py tour_centro 1.3
+    # Exemplo: python walk_loop.py tour_maternidade 1.2
+    # Exemplo: python walk_loop.py bairro_preventorio 1.1
+    route_arg = sys.argv[1] if len(sys.argv) > 1 else "tour_centro"
+    speed_arg = float(sys.argv[2]) if len(sys.argv) > 2 else 1.3
+    run_loop(route_name=route_arg, speed_mps=speed_arg)

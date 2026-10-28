@@ -305,6 +305,15 @@ class FoneloraHTTPHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/routes":
+            routes_file = BASE_DIR / "routes_data.json"
+            if routes_file.is_file():
+                routes_data = json.loads(routes_file.read_text(encoding="utf-8"))
+            else:
+                routes_data = {}
+            self._send_json({"ok": True, "routes": routes_data})
+            return
+
         if parsed.path in ("/", "/index.html"):
             index_file = BASE_DIR / "index.html"
             content = index_file.read_bytes()

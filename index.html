@@ -182,10 +182,20 @@
     </div>
 
     <div id="routePanel">
+      <div class="section-title">Circuitos Prontos (Rio Branco)</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <select id="presetRouteSelect" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:7px;border-radius:8px;font-size:12px;" onchange="loadPresetRoute(this.value)">
+          <option value="">Selecione um Circuito pelas Ruas...</option>
+          <option value="tour_centro">🏛️ Tour Centro Histórico & Pokéstops (6.5 km)</option>
+          <option value="tour_maternidade">🌳 Parque da Maternidade (7.0 km)</option>
+          <option value="bairro_preventorio">🏡 Circuito Bairro Preventório (2.1 km)</option>
+        </select>
+      </div>
+
       <div class="section-title">Simulação de Rota / Velocidade</div>
       <div class="field" style="margin-bottom:8px;">
-        <label>Velocidade: <span id="speedLabel">3.6 m/s (13.0 km/h)</span></label>
-        <input id="speedSlider" type="range" min="1.0" max="30.0" step="0.5" value="3.6" oninput="updateSpeedLabel()" />
+        <label>Velocidade: <span id="speedLabel">1.3 m/s (4.7 km/h)</span></label>
+        <input id="speedSlider" type="range" min="1.0" max="30.0" step="0.1" value="1.3" oninput="updateSpeedLabel()" />
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn success" style="flex:1" id="routeStartBtn" onclick="toggleRouteSimulation()">Iniciar Rota</button>
@@ -481,6 +491,32 @@
           drawRouteLine();
         }
       }, 500);
+    }
+
+    async function loadPresetRoute(routeName) {
+      if (!routeName) return;
+      try {
+        const r = await fetch('/api/routes');
+        const data = await r.json();
+        if (data.ok && data.routes && data.routes[routeName]) {
+          const pts = data.routes[routeName];
+          clearRoute();
+          setMode('route');
+          pts.forEach((pt, idx) => {
+            if (idx === 0) {
+              setInputs(pt[0], pt[1]);
+              playerMarker.setLatLng([pt[0], pt[1]]);
+            }
+            addWaypoint(pt[0], pt[1]);
+          });
+          if (routeLine) {
+            map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+          }
+          setStatus(`Circuito "${routeName}" carregado com ${pts.length} pontos pelas ruas! Clique em "Iniciar Rota".`);
+        }
+      } catch (err) {
+        setStatus('Erro ao carregar rota: ' + err);
+      }
     }
 
     function importGPX(event) {
