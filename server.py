@@ -324,8 +324,17 @@ class FoneloraHTTPHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/connect":
             serial = body.get("serial")
-            ok, msg = controller.ensure_apk_and_service(serial=serial)
-            self._send_json({"ok": ok, "message": msg, "devices": controller.list_devices()})
+            # If Pokemon GO is installed, do NOT install gpslocate.apk or register mock providers!
+            devices = controller.list_devices()
+            online = [d for d in devices if d["state"] == "device"]
+            target = serial or controller.selected_serial or (online[0]["serial"] if online else None)
+            if target:
+                controller.selected_serial = target
+                # Set up port forwarding for Pokémon GO ZeroMQ (7878)
+                controller._run_adb(["forward", f"tcp:{POGO_LOCAL_PORT}", f"tcp:{POGO_DEVICE_PORT}"], serial=target)
+                self._send_json({"ok": True, "message": f"Conectado ao Android ({target}) via canal Pokémon GO (7878)", "devices": controller.list_devices()})
+            else:
+                self._send_json({"ok": False, "message": "Nenhum dispositivo encontrado", "devices": []})
             return
 
         if parsed.path == "/api/location":
