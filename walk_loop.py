@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
+import os
+import sys
+from pathlib import Path
+
+# Auto-elevação para o ambiente virtual com pyzmq se executado com o Python global
+venv_python = Path(__file__).resolve().parent / ".venv/bin/python3"
+if venv_python.is_file() and sys.executable != str(venv_python):
+    os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+
 import json
 import math
 import random
-import sys
 import time
 import zmq
 
@@ -102,7 +110,6 @@ def run_loop():
                     sock.send_string(payload)
                     _ = sock.recv_string()
                 except Exception as e:
-                    # Se falhar ou timeout, recria socket
                     sock.close()
                     sock = ctx.socket(zmq.REQ)
                     sock.setsockopt(zmq.RCVTIMEO, 1500)
