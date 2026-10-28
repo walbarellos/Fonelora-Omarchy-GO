@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fonelora Location Changer — Omarchy Linux Edition</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0f141c;
+      --panel: rgba(18, 24, 34, 0.94);
+      --border: rgba(255, 255, 255, 0.1);
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+    #map { width: 100%; height: 100%; z-index: 1; }
+
+    /* Top Bar */
+    .topbar {
+      position: absolute; top: 14px; left: 14px; right: 14px; z-index: 1000;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      pointer-events: none;
+    }
+    .topbar > * { pointer-events: auto; }
+    .brand-card {
+      background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(12px);
+      padding: 10px 16px; border-radius: 12px; display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .brand-title { font-weight: 700; font-size: 15px; letter-spacing: 0.3px; }
+    .badge {
+      font-size: 11px; padding: 3px 8px; border-radius: 999px; font-weight: 600;
+      background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35);
+    }
+    .badge.online { background: rgba(16, 185, 129, 0.2); color: #34d399; border-color: rgba(16, 185, 129, 0.4); }
+    .badge.offline { background: rgba(239, 68, 68, 0.2); color: #f87171; border-color: rgba(239, 68, 68, 0.4); }
+
+    /* Search box */
+    .search-bar {
+      display: flex; gap: 8px; background: var(--panel); border: 1px solid var(--border);
+      padding: 6px; border-radius: 12px; width: 420px; max-width: 45vw;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); backdrop-filter: blur(12px);
+    }
+    .search-bar input {
+      flex: 1; background: transparent; border: none; color: var(--text);
+      padding: 6px 10px; font-size: 13px; outline: none;
+    }
+    .btn {
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 7px 13px; font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: 0.15s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn.secondary { background: rgba(255,255,255,0.08); color: var(--text); border: 1px solid var(--border); }
+    .btn.secondary:hover { background: rgba(255,255,255,0.14); }
+    .btn.danger { background: var(--danger); }
+    .btn.success { background: var(--success); }
+
+    /* Mode Switcher */
+    .mode-tabs {
+      display: flex; gap: 6px; background: var(--panel); border: 1px solid var(--border);
+      padding: 6px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .mode-tab {
+      background: transparent; color: var(--muted); border: none; padding: 7px 12px;
+      border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .mode-tab.active { background: var(--accent); color: #fff; }
+
+    /* Left Control Sidebar */
+    .sidebar {
+      position: absolute; top: 76px; left: 14px; width: 330px; z-index: 1000;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px; display: flex; flex-direction: column; gap: 14px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.45); backdrop-filter: blur(12px);
+      max-height: calc(100vh - 92px); overflow-y: auto;
+    }
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+    .coord-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 11px; color: var(--muted); }
+    .field input, .field select {
+      background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: var(--text);
+      padding: 7px 9px; border-radius: 8px; font-size: 12px; outline: none;
+    }
+    .status-box {
+      font-size: 12px; padding: 9px 11px; border-radius: 8px;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: #d1d5db;
+      line-height: 1.4;
+    }
+
+    /* Cooldown Card */
+    .cooldown-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 8px 12px; border-radius: 8px; font-size: 12px;
+    }
+    .cooldown-timer { font-weight: 700; color: #fbbf24; font-variant-numeric: tabular-nums; }
+
+    /* Joystick Widget */
+    .joystick-panel {
+      position: absolute; bottom: 20px; right: 20px; z-index: 1000;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+      padding: 14px; width: 190px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.45); backdrop-filter: blur(12px);
+    }
+    .joy-ring {
+      width: 120px; height: 120px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(59,130,246,0.18) 0%, rgba(0,0,0,0.45) 100%);
+      border: 2px solid rgba(59,130,246,0.45); position: relative;
+      display: flex; align-items: center; justify-content: center;
+      cursor: grab; user-select: none;
+    }
+    .joy-knob {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 4px 12px rgba(59,130,246,0.6);
+      position: absolute; transition: transform 0.05s linear;
+    }
+    .joy-hint { font-size: 11px; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="topbar">
+    <div class="brand-card">
+      <div>
+        <div class="brand-title">Fonelora Omarchy</div>
+        <div style="font-size:11px;color:var(--muted)">Android GPS Changer (TCP:38438)</div>
+      </div>
+      <span id="deviceBadge" class="badge offline">Desconectado</span>
+    </div>
+
+    <div class="search-bar">
+      <input id="searchInput" type="text" placeholder="Buscar cidade, endereço ou colar lat,lon (ex: 35.6895, 139.6917)..." />
+      <button class="btn" onclick="searchPlace()">Ir</button>
+    </div>
+
+    <div class="mode-tabs">
+      <button class="mode-tab active" data-mode="teleport" onclick="setMode('teleport')">Teleporte</button>
+      <button class="mode-tab" data-mode="route" onclick="setMode('route')">Rota Multiponto</button>
+      <button class="mode-tab" data-mode="joystick" onclick="setMode('joystick')">Joystick 360°</button>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div>
+      <div class="section-title">Dispositivo Android (ADB)</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <select id="deviceSelect" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:7px;border-radius:8px;font-size:12px;"></select>
+        <button class="btn secondary" onclick="connectAndroid()">Conectar</button>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <input id="wifiInput" type="text" placeholder="ADB Wi-Fi (IP:5555)" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:8px;font-size:11px;" />
+        <button class="btn secondary" onclick="connectWifi()">Wi-Fi</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Coordenadas Atuais</div>
+      <div class="coord-grid">
+        <div class="field">
+          <label>Latitude</label>
+          <input id="latInput" type="number" step="0.000001" value="-9.975487" />
+        </div>
+        <div class="field">
+          <label>Longitude</label>
+          <input id="lonInput" type="number" step="0.000001" value="-67.821538" />
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn" style="flex:1" onclick="teleportNow()">Teleportar Agora</button>
+        <button class="btn danger" onclick="stopMocking()" title="Restaurar GPS Real">Reset</button>
+      </div>
+    </div>
+
+    <div id="routePanel">
+      <div class="section-title">Simulação de Rota / Velocidade</div>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Velocidade: <span id="speedLabel">3.6 m/s (13.0 km/h)</span></label>
+        <input id="speedSlider" type="range" min="1.0" max="30.0" step="0.5" value="3.6" oninput="updateSpeedLabel()" />
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn success" style="flex:1" id="routeStartBtn" onclick="toggleRouteSimulation()">Iniciar Rota</button>
+        <button class="btn secondary" onclick="clearRoute()">Limpar (<span id="wpCount">0</span>)</button>
+        <label class="btn secondary" style="cursor:pointer;">
+          GPX <input type="file" accept=".gpx" style="display:none" onchange="importGPX(event)" />
+        </label>
+      </div>
+    </div>
+
+    <div class="cooldown-row">
+      <span>Cooldown sugerido (<span id="lastDistKm">0.0</span> km):</span>
+      <span id="cooldownTimer" class="cooldown-timer">00:00:00</span>
+    </div>
+
+    <div id="statusBox" class="status-box">
+      Clique no mapa para escolher o destino. Conecte o Android com Depuração USB ativada.
+    </div>
+  </div>
+
+  <div class="joystick-panel">
+    <div class="section-title" style="margin:0">Joystick Tempo Real</div>
+    <div id="joyRing" class="joy-ring">
+      <div id="joyKnob" class="joy-knob"></div>
+    </div>
+    <div class="joy-hint">Arraste o círculo ou use <b>WASD / Setas</b></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let mode = 'teleport';
+    let currentLat = -9.975487;
+    let currentLon = -67.821538;
+    let lastTeleportLat = null;
+    let lastTeleportLon = null;
+    let waypoints = [];
+    let waypointMarkers = [];
+    let routeLine = null;
+    let routeTimer = null;
+    let cooldownRemaining = 0;
+
+    const map = L.map('map', { zoomControl: false }).setView([currentLat, currentLon], 15);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    const playerMarker = L.marker([currentLat, currentLon], { draggable: true }).addTo(map);
+    playerMarker.bindPopup('Posição simulada no Android');
+
+    playerMarker.on('dragend', () => {
+      const pos = playerMarker.getLatLng();
+      setInputs(pos.lat, pos.lng);
+      if (mode === 'teleport') teleportNow();
+    });
+
+    map.on('click', (e) => {
+      const { lat, lng } = e.latlng;
+      if (mode === 'route') {
+        addWaypoint(lat, lng);
+      } else {
+        setInputs(lat, lng);
+        playerMarker.setLatLng([lat, lng]);
+      }
+    });
+
+    function setInputs(lat, lon) {
+      currentLat = lat;
+      currentLon = lon;
+      document.getElementById('latInput').value = lat.toFixed(6);
+      document.getElementById('lonInput').value = lon.toFixed(6);
+    }
+
+    function setStatus(msg) {
+      document.getElementById('statusBox').textContent = msg;
+    }
+
+    function setMode(newMode) {
+      mode = newMode;
+      document.querySelectorAll('.mode-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === newMode);
+      });
+      if (newMode === 'route') {
+        setStatus('Modo Rota: clique em vários pontos no mapa para traçar o caminho e clique em Iniciar Rota.');
+      } else if (newMode === 'joystick') {
+        setStatus('Modo Joystick: use WASD, Setas ou arraste o Joystick no canto inferior direito.');
+      } else {
+        setStatus('Modo Teleporte: clique no mapa e pressione "Teleportar Agora".');
+      }
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function calcCooldownSec(distKm) {
+      if (distKm < 1) return 0;
+      if (distKm <= 5) return 120;
+      if (distKm <= 10) return 360;
+      if (distKm <= 25) return 660;
+      if (distKm <= 50) return 1080;
+      if (distKm <= 100) return 1800;
+      if (distKm <= 250) return 2700;
+      if (distKm <= 500) return 3720;
+      if (distKm <= 1000) return 5400;
+      return 7200;
+    }
+
+    setInterval(() => {
+      if (cooldownRemaining > 0) {
+        cooldownRemaining--;
+        const h = String(Math.floor(cooldownRemaining / 3600)).padStart(2, '0');
+        const m = String(Math.floor((cooldownRemaining % 3600) / 60)).padStart(2, '0');
+        const s = String(cooldownRemaining % 60).padStart(2, '0');
+        document.getElementById('cooldownTimer').textContent = `${h}:${m}:${s}`;
+      }
+    }, 1000);
+
+    async function sendCoordsToAndroid(lat, lon, updateCooldown = false) {
+      setInputs(lat, lon);
+      playerMarker.setLatLng([lat, lon]);
+      if (updateCooldown && lastTeleportLat !== null) {
+        const dist = haversineKm(lastTeleportLat, lastTeleportLon, lat, lon);
+        document.getElementById('lastDistKm').textContent = dist.toFixed(1);
+        if (dist > 1.5) cooldownRemaining = calcCooldownSec(dist);
+      }
+      lastTeleportLat = lat;
+      lastTeleportLon = lon;
+      try {
+        const r = await fetch('/api/location', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lon })
+        });
+        const data = await r.json();
+        setStatus(data.ok ? `GPS atualizado no Android: ${lat.toFixed(6)}, ${lon.toFixed(6)}` : `Aviso: ${data.message}`);
+      } catch (e) {
+        setStatus('Erro ao comunicar com o servidor local: ' + e.message);
+      }
+    }
+
+    function teleportNow() {
+      const lat = parseFloat(document.getElementById('latInput').value);
+      const lon = parseFloat(document.getElementById('lonInput').value);
+      if (isNaN(lat) || isNaN(lon)) return;
+      map.panTo([lat, lon]);
+      sendCoordsToAndroid(lat, lon, true);
+    }
+
+    async function stopMocking() {
+      stopRouteSimulation();
+      const r = await fetch('/api/stop', { method: 'POST' });
+      const data = await r.json();
+      setStatus(data.message);
+      refreshStatus();
+    }
+
+    async function connectAndroid() {
+      const serial = document.getElementById('deviceSelect').value || null;
+      setStatus('Instalando/iniciando serviço Fonelora no Android via ADB...');
+      const r = await fetch('/api/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serial })
+      });
+      const data = await r.json();
+      setStatus(data.message);
+      refreshStatus();
+    }
+
+    async function connectWifi() {
+      const address = document.getElementById('wifiInput').value.trim();
+      if (!address) return;
+      const r = await fetch('/api/wifi-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address })
+      });
+      const data = await r.json();
+      setStatus(data.message);
+      refreshStatus();
+    }
+
+    async function refreshStatus() {
+      try {
+        const r = await fetch('/api/status');
+        const data = await r.json();
+        const select = document.getElementById('deviceSelect');
+        const prev = select.value;
+        select.innerHTML = '';
+        if (data.devices.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'Nenhum Android detectado';
+          select.appendChild(opt);
+        } else {
+          data.devices.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.serial;
+            opt.textContent = `${d.model} (${d.serial}) [${d.state}]`;
+            select.appendChild(opt);
+          });
+          if (prev) select.value = prev;
+        }
+        const online = data.devices.filter(d => d.state === 'device');
+        const badge = document.getElementById('deviceBadge');
+        if (online.length > 0) {
+          badge.className = 'badge online';
+          badge.textContent = data.is_mocking ? `Simulando (${online[0].model})` : `ADB Pronto (${online[0].model})`;
+        } else {
+          badge.className = 'badge offline';
+          badge.textContent = 'USB/ADB Desconectado';
+        }
+      } catch (e) {}
+    }
+
+    function updateSpeedLabel() {
+      const v = parseFloat(document.getElementById('speedSlider').value);
+      document.getElementById('speedLabel').textContent = `${v.toFixed(1)} m/s (${(v * 3.6).toFixed(1)} km/h)`;
+    }
+
+    function addWaypoint(lat, lng) {
+      waypoints.push([lat, lng]);
+      const m = L.circleMarker([lat, lng], { radius: 6, color: '#3b82f6', fillColor: '#60a5fa', fillOpacity: 0.9 }).addTo(map);
+      waypointMarkers.push(m);
+      document.getElementById('wpCount').textContent = waypoints.length;
+      drawRouteLine();
+    }
+
+    function drawRouteLine() {
+      if (routeLine) map.removeLayer(routeLine);
+      const pts = [[currentLat, currentLon], ...waypoints];
+      if (pts.length > 1) {
+        routeLine = L.polyline(pts, { color: '#3b82f6', weight: 4, dashArray: '6, 6' }).addTo(map);
+      }
+    }
+
+    function clearRoute() {
+      stopRouteSimulation();
+      waypoints = [];
+      waypointMarkers.forEach(m => map.removeLayer(m));
+      waypointMarkers = [];
+      if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+      document.getElementById('wpCount').textContent = '0';
+    }
+
+    function stopRouteSimulation() {
+      if (routeTimer) {
+        clearInterval(routeTimer);
+        routeTimer = null;
+      }
+      document.getElementById('routeStartBtn').textContent = 'Iniciar Rota';
+    }
+
+    function toggleRouteSimulation() {
+      if (routeTimer) {
+        stopRouteSimulation();
+        setStatus('Rota pausada.');
+        return;
+      }
+      if (waypoints.length === 0) {
+        setStatus('Adicione pelo menos 1 ponto no mapa no modo Rota Multiponto.');
+        return;
+      }
+      document.getElementById('routeStartBtn').textContent = 'Pausar Rota';
+      routeTimer = setInterval(() => {
+        if (waypoints.length === 0) {
+          stopRouteSimulation();
+          setStatus('Rota concluída!');
+          return;
+        }
+        const [targetLat, targetLon] = waypoints[0];
+        const speedMps = parseFloat(document.getElementById('speedSlider').value);
+        const distM = haversineKm(currentLat, currentLon, targetLat, targetLon) * 1000;
+        const stepM = speedMps * 0.5; // 500ms tick
+        if (distM <= stepM) {
+          waypoints.shift();
+          const m = waypointMarkers.shift();
+          if (m) map.removeLayer(m);
+          document.getElementById('wpCount').textContent = waypoints.length;
+          sendCoordsToAndroid(targetLat, targetLon, false);
+          drawRouteLine();
+        } else {
+          const ratio = stepM / distM;
+          const nextLat = currentLat + (targetLat - currentLat) * ratio;
+          const nextLon = currentLon + (targetLon - currentLon) * ratio;
+          sendCoordsToAndroid(nextLat, nextLon, false);
+          drawRouteLine();
+        }
+      }, 500);
+    }
+
+    function importGPX(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(e.target.result, 'text/xml');
+        const pts = [...xml.querySelectorAll('trkpt, rtept, wpt')];
+        if (pts.length === 0) {
+          setStatus('Nenhum ponto encontrado no arquivo GPX.');
+          return;
+        }
+        clearRoute();
+        setMode('route');
+        pts.forEach((pt, idx) => {
+          const lat = parseFloat(pt.getAttribute('lat'));
+          const lon = parseFloat(pt.getAttribute('lon'));
+          if (!isNaN(lat) && !isNaN(lon)) {
+            if (idx === 0) {
+              setInputs(lat, lon);
+              playerMarker.setLatLng([lat, lon]);
+              map.setView([lat, lon], 15);
+            } else {
+              addWaypoint(lat, lon);
+            }
+          }
+        });
+        setStatus(`Arquivo GPX importado com ${waypoints.length} pontos!`);
+      };
+      reader.readAsText(file);
+    }
+
+    async function searchPlace() {
+      const q = document.getElementById('searchInput').value.trim();
+      if (!q) return;
+      const coordMatch = q.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lon = parseFloat(coordMatch[2]);
+        setInputs(lat, lon);
+        playerMarker.setLatLng([lat, lon]);
+        map.setView([lat, lon], 16);
+        return;
+      }
+      try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+        const res = await r.json();
+        if (res.length > 0) {
+          const lat = parseFloat(res[0].lat);
+          const lon = parseFloat(res[0].lon);
+          setInputs(lat, lon);
+          playerMarker.setLatLng([lat, lon]);
+          map.setView([lat, lon], 16);
+          setStatus(`Local encontrado: ${res[0].display_name}`);
+        } else {
+          setStatus('Local não encontrado.');
+        }
+      } catch (e) {
+        setStatus('Erro na busca: ' + e.message);
+      }
+    }
+
+    // Joystick 360 + Keyboard WASD
+    const joyRing = document.getElementById('joyRing');
+    const joyKnob = document.getElementById('joyKnob');
+    let joyVec = { dx: 0, dy: 0 };
+    let joyDragging = false;
+
+    function updateJoyFromPointer(clientX, clientY) {
+      const rect = joyRing.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      let dx = clientX - cx;
+      let dy = clientY - cy;
+      const maxR = 40;
+      const dist = Math.hypot(dx, dy);
+      if (dist > maxR) {
+        dx = (dx / dist) * maxR;
+        dy = (dy / dist) * maxR;
+      }
+      joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+      joyVec = { dx: dx / maxR, dy: -dy / maxR };
+    }
+
+    joyRing.addEventListener('pointerdown', (e) => {
+      joyDragging = true;
+      joyRing.setPointerCapture(e.pointerId);
+      updateJoyFromPointer(e.clientX, e.clientY);
+    });
+    joyRing.addEventListener('pointermove', (e) => {
+      if (joyDragging) updateJoyFromPointer(e.clientX, e.clientY);
+    });
+    joyRing.addEventListener('pointerup', () => {
+      joyDragging = false;
+      joyKnob.style.transform = 'translate(0px, 0px)';
+      joyVec = { dx: 0, dy: 0 };
+    });
+
+    const keysDown = new Set();
+    window.addEventListener('keydown', (e) => {
+      if (document.activeElement.tagName === 'INPUT') return;
+      const k = e.key.toLowerCase();
+      if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) {
+        keysDown.add(k);
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      keysDown.delete(e.key.toLowerCase());
+    });
+
+    setInterval(() => {
+      let vx = joyVec.dx;
+      let vy = joyVec.dy;
+      if (keysDown.has('w') || keysDown.has('arrowup')) vy += 1;
+      if (keysDown.has('s') || keysDown.has('arrowdown')) vy -= 1;
+      if (keysDown.has('d') || keysDown.has('arrowright')) vx += 1;
+      if (keysDown.has('a') || keysDown.has('arrowleft')) vx -= 1;
+      const mag = Math.hypot(vx, vy);
+      if (mag > 0.05) {
+        const speedMps = parseFloat(document.getElementById('speedSlider').value);
+        const stepMeters = speedMps * 0.4;
+        const dLat = ((vy / mag) * stepMeters) / 111320;
+        const dLon = ((vx / mag) * stepMeters) / (111320 * Math.cos(currentLat * Math.PI / 180));
+        sendCoordsToAndroid(currentLat + dLat, currentLon + dLon, false);
+      }
+    }, 400);
+
+    refreshStatus();
+    setInterval(refreshStatus, 3000);
+  </script>
+</body>
+</html>
