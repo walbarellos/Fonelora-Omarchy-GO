@@ -10,6 +10,7 @@ Reverse-engineered via REA from:
 
 import json
 import os
+import random
 import shutil
 import socket
 import subprocess
@@ -189,8 +190,16 @@ class AndroidLocationController:
 
     def send_location(self, lat: float, lon: float) -> tuple[bool, str]:
         with self.lock:
-            self.current_lat = float(lat)
-            self.current_lon = float(lon)
+            # Assinatura com ruído estocástico (Jitter físico de satélite civil GPS: ±0.4m a ±1.2m)
+            # Utiliza nanossegundos do timer do sistema como seed adicional
+            ns_seed = time.time_ns() % 1000000
+            random.seed(time.time() + (ns_seed / 1e9))
+            
+            jitter_lat = (random.random() - 0.5) * 0.000010
+            jitter_lon = (random.random() - 0.5) * 0.000010
+            
+            self.current_lat = round(float(lat) + jitter_lat, 7)
+            self.current_lon = round(float(lon) + jitter_lon, 7)
 
             # 1. First attempt direct Pokémon GO ZeroMQ injection (Port 7878 / 17878)
             pogo_ok = self._send_pogo_zmq(self.current_lat, self.current_lon)

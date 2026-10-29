@@ -549,7 +549,7 @@
 
     function stopRouteSimulation() {
       if (routeTimer) {
-        clearInterval(routeTimer);
+        clearTimeout(routeTimer);
         routeTimer = null;
       }
       document.getElementById('routeStartBtn').textContent = 'Iniciar Rota';
@@ -566,16 +566,30 @@
         return;
       }
       document.getElementById('routeStartBtn').textContent = 'Pausar Rota';
-      routeTimer = setInterval(() => {
+
+      function stepRoute() {
+        if (!routeTimer) return;
         if (waypoints.length === 0) {
           stopRouteSimulation();
           setStatus('Rota concluída!');
           return;
         }
+
         const [targetLat, targetLon] = waypoints[0];
-        const speedMps = parseFloat(document.getElementById('speedSlider').value);
+        const baseSpeedMps = parseFloat(document.getElementById('speedSlider').value);
+
+        // Variação orgânica humana: velocidade flutua ±18% a cada passada (nanotimer)
+        const nsNoise = (performance.now() % 1) - 0.5;
+        const speedNoiseFactor = 1.0 + ((Math.random() - 0.5) * 0.36) + (nsNoise * 0.05);
+        const currentSpeedMps = Math.max(0.6, baseSpeedMps * speedNoiseFactor);
+
+        // Intervalo assimétrico entre pacotes (420ms a 680ms)
+        const nextTickMs = 450 + Math.random() * 200 + (performance.now() % 50);
+        const dtSec = nextTickMs / 1000.0;
+        const stepM = currentSpeedMps * dtSec;
+
         const distM = haversineKm(currentLat, currentLon, targetLat, targetLon) * 1000;
-        const stepM = speedMps * 0.5; // 500ms tick
+
         if (distM <= stepM) {
           waypoints.shift();
           const m = waypointMarkers.shift();
@@ -590,7 +604,12 @@
           sendCoordsToAndroid(nextLat, nextLon, false);
           drawRouteLine();
         }
-      }, 500);
+
+        // Agenda o próximo passo com jitter de nanossegundos
+        routeTimer = setTimeout(stepRoute, nextTickMs);
+      }
+
+      routeTimer = setTimeout(stepRoute, 100);
     }
 
     async function loadPresetRoute(routeName) {

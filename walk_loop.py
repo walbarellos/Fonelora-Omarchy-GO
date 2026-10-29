@@ -58,6 +58,8 @@ def fetch_street_route(from_pt, to_pt):
         print(f"[Transit] Aviso: Rota OSRM falhou ({e}), usando aproximação direta.")
         return [from_pt, to_pt]
 
+PAUSE_FILE = Path(__file__).resolve().parent / ".bot_pause"
+
 def send_step(sock, lat, lon):
     # Jitter espacial realista de GPS (variação de ~0.5m a 1.2m típica de satélites civis)
     jitter_lat = (random.random() - 0.5) * 0.000010
@@ -68,6 +70,19 @@ def send_step(sock, lat, lon):
     })
     sock.send_string(payload)
     return sock.recv_string()
+
+def maybe_pause(sock, lat, lon):
+    """Coordenação com bot_brain.py: se o arquivo .bot_pause existir, o avatar
+    para em posição (com jitter de GPS humano) até o arquivo sumir."""
+    if not PAUSE_FILE.exists():
+        return False
+    while PAUSE_FILE.exists():
+        try:
+            send_step(sock, lat, lon)
+        except Exception:
+            pass
+        time.sleep(random.uniform(1.2, 2.6))
+    return True
 
 def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, transit_speed_kmh: float = 28.0):
     routes_file = ROUTES_FILE
@@ -134,6 +149,7 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                 cur_lat = p1[0] + (p2[0] - p1[0]) * frac
                 cur_lon = p1[1] + (p2[1] - p1[1]) * frac
                 try:
+                    maybe_pause(sock, cur_lat, cur_lon)
                     send_step(sock, cur_lat, cur_lon)
                 except Exception:
                     sock.close()
