@@ -17,7 +17,34 @@ import zmq
 
 PORT = 17878
 ROUTES_FILE = Path(__file__).resolve().parent / "routes_data.json"
+STATE_FILE = Path(__file__).resolve().parent / ".bot_state.json"
 HOME = (-9.975487, -67.821538)
+
+def publish_state(state: str, details: str = "", lat: float = None, lon: float = None):
+    """Publica o estado de locomoção em tempo real para o dashboard web."""
+    try:
+        data = {
+            "state": state, # 'transit', 'walking', 'paused', 'idle'
+            "details": details,
+            "lat": lat,
+            "lon": lon,
+            "timestamp": time.time()
+        }
+        STATE_FILE.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+def calculate_turn_angle(p1, p2, p3):
+    """Calcula o ângulo de deflexão (curva) em graus entre três pontos consecutivos."""
+    v1 = (p2[0] - p1[0], p2[1] - p1[1])
+    v2 = (p3[0] - p2[0], p3[1] - p2[1])
+    dot = v1[0]*v2[0] + v1[1]*v2[1]
+    mag1 = math.hypot(v1[0], v1[1])
+    mag2 = math.hypot(v2[0], v2[1])
+    if mag1 * mag2 == 0:
+        return 0.0
+    cos_angle = max(-1.0, min(1.0, dot / (mag1 * mag2)))
+    return math.degrees(math.acos(cos_angle))
 
 def distance_meters(lat1, lon1, lat2, lon2):
     R = 6371000 # metros
@@ -188,9 +215,19 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
             p2 = waypoints[i+1]
             seg_dist = distance_meters(p1[0], p1[1], p2[0], p2[1])
 
+            # Inércia angular em curvas: se houver deflexão acentuada (> 35 graus), desacelera antes da curva
+            turn_slowdown = 1.0
+            if i < len(waypoints) - 2:
+                p3 = waypoints[i+2]
+                angle = calculate_turn_angle(p1, p2, p3)
+                if angle > 70:
+                    turn_slowdown = 0.55 # Curva fechada (~90°): desacelera para ~45% da velocidade
+                elif angle > 35:
+                    turn_slowdown = 0.75 # Curva média: desacelera suave
+
             # Variação humana de caminhada:
             # 1. Velocidade flutua entre -20% e +25% a cada trecho (passo humano não é metrônomo)
-            current_walk_kmh = walk_speed_kmh * random.uniform(0.78, 1.22)
+            current_walk_kmh = walk_speed_kmh * random.uniform(0.78, 1.22) * turn_slowdown
             walk_mps = current_walk_kmh / 3.6
             
             # 2. Variação no tempo de envio de pacotes (0.65s a 0.95s)
@@ -204,6 +241,8 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
             # 3. Micro-desvio de calçada (cada volta caminha num lado da rua / calçada ligeiramente diferente)
             offset_lat = (random.random() - 0.5) * 0.000015
             offset_lon = (random.random() - 0.5) * 0.000015
+
+            publish_state("walking", f"Volta #{loop_count} · {current_walk_kmh:.1f} km/h", p1[0], p1[1])
 
             for s in range(steps + 1):
                 frac = s / steps
@@ -234,19 +273,22 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                 t_end = time.time() + pause_s
                 last_notice = time.time()
                 while time.time() < t_end:
+                    remaining_min = (t_end - time.time()) / 60.0
+                    publish_state("paused", f"Pausa humana ({remaining_min:.1f} min)", p2[0], p2[1])
                     try:
                         send_step(sock, p2[0], p2[1])
                     except Exception:
                         pass
                     if time.time() - last_notice >= 60.0:
-                        remaining_min = (t_end - time.time()) / 60.0
                         print(f"   ... ainda em pausa: restam {remaining_min:.1f} min")
                         last_notice = time.time()
                     time.sleep(random.uniform(1.2, 2.5))
+                publish_state("walking", f"Retomando volta #{loop_count}", p2[0], p2[1])
                 print("🚶 [Fim da Pausa] Retomando caminhada orgânica!\n")
             elif roll < 0.025:
                 pause_s = random.uniform(15.0, 30.0)
                 print(f"   [Pausa humana] Parou {pause_s:.1f}s (simulando captura demorada/mochila)...")
+                publish_state("paused", f"Checando mochila ({pause_s:.0f}s)", p2[0], p2[1])
                 t_end = time.time() + pause_s
                 while time.time() < t_end:
                     try:
@@ -254,6 +296,7 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                     except Exception:
                         pass
                     time.sleep(random.uniform(1.0, 2.0))
+                publish_state("walking", f"Volta #{loop_count}", p2[0], p2[1])
             elif roll < 0.12:
                 pause_s = random.uniform(4.0, 8.5)
                 t_end = time.time() + pause_s

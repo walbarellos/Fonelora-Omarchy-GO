@@ -327,6 +327,18 @@ class FoneloraHTTPHandler(BaseHTTPRequestHandler):
             devices = controller.list_devices()
             # Sempre consulta a posição real viva do jogo antes de responder
             controller.get_pogo_position()
+
+            bot_state = {}
+            state_file = BASE_DIR / ".bot_state.json"
+            if state_file.is_file():
+                try:
+                    bot_state = json.loads(state_file.read_text(encoding="utf-8"))
+                    # Expirar estado se mais velho que 30s
+                    if time.time() - bot_state.get("timestamp", 0) > 30:
+                        bot_state = {"state": "idle", "details": "Script parado"}
+                except Exception:
+                    pass
+
             self._send_json(
                 {
                     "ok": True,
@@ -338,6 +350,7 @@ class FoneloraHTTPHandler(BaseHTTPRequestHandler):
                     "lat": controller.current_lat,
                     "lon": controller.current_lon,
                     "last_error": controller.last_error,
+                    "bot_state": bot_state,
                 }
             )
             return

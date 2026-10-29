@@ -481,6 +481,19 @@
         const statusTxt = document.getElementById('deviceStatusText');
         const actionBtn = document.getElementById('connectActionBtn');
 
+        // Atualiza estado do bot (pausa humana, caminhada ou trânsito)
+        const bot = data.bot_state;
+        if (bot && bot.state && bot.state !== 'idle') {
+          if (bot.state === 'paused') {
+            playerMarker.bindTooltip(`☕ ${bot.details}`, { permanent: true, direction: 'top', className: 'pulse-tooltip' }).openTooltip();
+            setStatus(`[PAUSA HUMANA] ${bot.details} — Satélite em repouso com micro-drift`);
+          } else if (bot.state === 'walking') {
+            playerMarker.bindTooltip(`🚶 ${bot.details}`, { permanent: false, direction: 'top' });
+          }
+        } else {
+          playerMarker.unbindTooltip();
+        }
+
         if (online.length > 0) {
           const m = online[0].model;
           badge.className = 'badge online';
