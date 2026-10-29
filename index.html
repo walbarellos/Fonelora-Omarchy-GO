@@ -76,25 +76,45 @@
 
     /* Left Control Sidebar */
     .sidebar {
-      position: absolute; top: 76px; left: 14px; width: 330px; z-index: 1000;
+      position: absolute; top: 76px; left: 14px; width: 360px; z-index: 1000;
       background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-      padding: 16px; display: flex; flex-direction: column; gap: 14px;
+      padding: 14px; display: flex; flex-direction: column; gap: 10px;
       box-shadow: 0 12px 32px rgba(0,0,0,0.45); backdrop-filter: blur(12px);
-      max-height: calc(100vh - 92px); overflow-y: auto;
+      max-height: calc(100vh - 95px); overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent;
     }
-    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
-    .coord-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+    .card-section {
+      background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .section-title {
+      font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.8px;
+      color: var(--muted); font-weight: 700; display: flex; align-items: center; justify-content: space-between;
+    }
+    .coord-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .field { display: flex; flex-direction: column; gap: 4px; }
     .field label { font-size: 11px; color: var(--muted); }
     .field input, .field select {
       background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: var(--text);
-      padding: 7px 9px; border-radius: 8px; font-size: 12px; outline: none;
+      padding: 6px 8px; border-radius: 6px; font-size: 12px; outline: none;
     }
     .status-box {
-      font-size: 12px; padding: 9px 11px; border-radius: 8px;
-      background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: #d1d5db;
-      line-height: 1.4;
+      font-size: 11.5px; padding: 8px 10px; border-radius: 8px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: #d1d5db;
+      line-height: 1.35;
     }
+
+    /* Speed preset buttons */
+    .speed-pills { display: flex; gap: 4px; margin-top: 4px; }
+    .speed-pill {
+      flex: 1; font-size: 10.5px; padding: 4px 0; background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+      cursor: pointer; text-align: center; font-weight: 600; transition: 0.15s;
+    }
+    .speed-pill:hover, .speed-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     /* Cooldown Card */
     .cooldown-row {
@@ -151,19 +171,19 @@
   </div>
 
   <div class="sidebar">
-    <div>
+    <div class="card-section">
       <div class="section-title">Dispositivo Android (ADB)</div>
-      <div style="display:flex;gap:6px;margin-bottom:6px;">
-        <select id="deviceSelect" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:7px;border-radius:8px;font-size:12px;"></select>
-        <button class="btn secondary" onclick="connectAndroid()">Conectar</button>
+      <div style="display:flex;gap:6px;">
+        <select id="deviceSelect" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-size:11.5px;"></select>
+        <button class="btn secondary" style="padding:6px 10px;font-size:11px;" onclick="connectAndroid()">Conectar</button>
       </div>
       <div style="display:flex;gap:6px;">
-        <input id="wifiInput" type="text" placeholder="ADB Wi-Fi (IP:5555)" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:8px;font-size:11px;" />
-        <button class="btn secondary" onclick="connectWifi()">Wi-Fi</button>
+        <input id="wifiInput" type="text" placeholder="Wi-Fi (IP:5555)" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:6px;font-size:11px;" />
+        <button class="btn secondary" style="padding:5px 9px;font-size:11px;" onclick="connectWifi()">Wi-Fi</button>
       </div>
     </div>
 
-    <div>
+    <div class="card-section">
       <div class="section-title">Coordenadas Atuais</div>
       <div class="coord-grid">
         <div class="field">
@@ -175,43 +195,48 @@
           <input id="lonInput" type="number" step="0.000001" value="-67.821538" />
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px;">
-        <button class="btn" style="flex:1" onclick="teleportNow()">Teleportar Agora</button>
-        <button class="btn danger" onclick="stopMocking()" title="Restaurar GPS Real">Reset</button>
+      <div style="display:flex;gap:6px;margin-top:2px;">
+        <button class="btn" style="flex:1;padding:6px;" onclick="teleportNow()">Teleportar</button>
+        <button class="btn danger" style="padding:6px 10px;" onclick="stopMocking()" title="Restaurar GPS Real">Reset</button>
       </div>
     </div>
 
-    <div id="routePanel">
+    <div id="routePanel" class="card-section">
       <div class="section-title">Circuitos Prontos (Rio Branco)</div>
-      <div style="display:flex;gap:6px;margin-bottom:8px;">
-        <select id="presetRouteSelect" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:7px;border-radius:8px;font-size:12px;" onchange="loadPresetRoute(this.value)">
-          <option value="">Selecione um Circuito pelas Ruas...</option>
-          <option value="tour_centro">🏛️ Tour Centro Histórico & Pokéstops (6.5 km)</option>
-          <option value="tour_maternidade">🌳 Parque da Maternidade (7.0 km)</option>
-          <option value="bairro_preventorio">🏡 Circuito Bairro Preventório (2.1 km)</option>
-          <option value="ufac_campus">🎓 Campus UFAC & Reitoria / Lago (19.8 km)</option>
-          <option value="horto_florestal">🌺 Horto Florestal & Getúlio Vargas (10.2 km)</option>
-          <option value="bosque_ciriaco">🌴 Bosque Capitão Ciríaco & Gameleira (5.4 km)</option>
-          <option value="tucuma_universitario">🏙️ Tucumã & Conjunto Universitário (20.5 km)</option>
-        </select>
+      <select id="presetRouteSelect" style="background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-size:11.5px;" onchange="loadPresetRoute(this.value)">
+        <option value="">Selecione um Circuito pelas Ruas...</option>
+        <option value="tour_centro">🏛️ Tour Centro & Pokéstops (6.5 km)</option>
+        <option value="tour_maternidade">🌳 Parque Maternidade (7.0 km)</option>
+        <option value="bairro_preventorio">🏡 Bairro Preventório (2.1 km)</option>
+        <option value="ufac_campus">🎓 Campus UFAC & Lago (19.8 km)</option>
+        <option value="horto_florestal">🌺 Horto Florestal (10.2 km)</option>
+        <option value="bosque_ciriaco">🌴 Bosque Capitão Ciríaco (5.4 km)</option>
+        <option value="tucuma_universitario">🏙️ Tucumã Universitário (20.5 km)</option>
+      </select>
+
+      <div class="section-title" style="margin-top:2px;">
+        <span>Velocidade de Deslocamento</span>
+        <span id="speedLabel" style="color:var(--accent);font-size:11px;">1.3 m/s (4.7 km/h)</span>
+      </div>
+      <input id="speedSlider" type="range" min="0.8" max="10.0" step="0.1" value="1.3" oninput="updateSpeedLabel()" style="accent-color:var(--accent);" />
+      
+      <div class="speed-pills">
+        <div class="speed-pill" onclick="setSpeedPreset(1.3, this)">🚶 Caminhada (4.7)</div>
+        <div class="speed-pill" onclick="setSpeedPreset(2.5, this)">🏃 Corrida (9.0)</div>
+        <div class="speed-pill" onclick="setSpeedPreset(7.5, this)">🚲 Bike/Carro (27)</div>
       </div>
 
-      <div class="section-title">Simulação de Rota / Velocidade</div>
-      <div class="field" style="margin-bottom:8px;">
-        <label>Velocidade: <span id="speedLabel">1.3 m/s (4.7 km/h)</span></label>
-        <input id="speedSlider" type="range" min="1.0" max="30.0" step="0.1" value="1.3" oninput="updateSpeedLabel()" />
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="btn success" style="flex:1" id="routeStartBtn" onclick="toggleRouteSimulation()">Iniciar Rota</button>
-        <button class="btn secondary" onclick="clearRoute()">Limpar (<span id="wpCount">0</span>)</button>
-        <label class="btn secondary" style="cursor:pointer;">
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        <button class="btn success" style="flex:1;padding:7px;" id="routeStartBtn" onclick="toggleRouteSimulation()">Iniciar Rota</button>
+        <button class="btn secondary" style="padding:7px 10px;" onclick="clearRoute()">Limpar (<span id="wpCount">0</span>)</button>
+        <label class="btn secondary" style="cursor:pointer;padding:7px 10px;">
           GPX <input type="file" accept=".gpx" style="display:none" onchange="importGPX(event)" />
         </label>
       </div>
     </div>
 
-    <div class="cooldown-row">
-      <span>Cooldown sugerido (<span id="lastDistKm">0.0</span> km):</span>
+    <div class="cooldown-row" style="padding:6px 10px;">
+      <span>Cooldown (<span id="lastDistKm">0.0</span> km):</span>
       <span id="cooldownTimer" class="cooldown-timer">00:00:00</span>
     </div>
 
@@ -424,6 +449,13 @@
     function updateSpeedLabel() {
       const v = parseFloat(document.getElementById('speedSlider').value);
       document.getElementById('speedLabel').textContent = `${v.toFixed(1)} m/s (${(v * 3.6).toFixed(1)} km/h)`;
+      document.querySelectorAll('.speed-pill').forEach(p => p.classList.remove('active'));
+    }
+
+    function setSpeedPreset(val, el) {
+      document.getElementById('speedSlider').value = val;
+      updateSpeedLabel();
+      if (el) el.classList.add('active');
     }
 
     function addWaypoint(lat, lng) {
