@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 /tmp/
 *.log
+.bot_brain_state.json
