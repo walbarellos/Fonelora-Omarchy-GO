@@ -1,0 +1,5 @@
+# build artifacts (reproduzíveis via build.sh)
+build/
+native/libfonescout.so
+native/err.txt
+fonescout.keystore

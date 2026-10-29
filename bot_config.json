@@ -1,0 +1,43 @@
+{
+  "_comentario": "Configuração do bot_brain.py. Itens AUSENTES em inventory.keep_max NUNCA são tocados (golden razz, silver pinap, rare candy, itens de evolução, incubadores ficam de fora de propósito).",
+
+  "inventory": {
+    "keep_max": {
+      "ITEM_POKE_BALL": 120,
+      "ITEM_GREAT_BALL": 80,
+      "ITEM_ULTRA_BALL": 60,
+      "ITEM_RAZZ_BERRY": 40,
+      "ITEM_NANAB_BERRY": 20,
+      "ITEM_PINAP_BERRY": 30,
+      "ITEM_SUPER_POTION": 20,
+      "ITEM_HYPER_POTION": 10,
+      "ITEM_MAX_POTION": 10,
+      "ITEM_REVIVE": 20,
+      "ITEM_MAX_REVIVE": 10,
+      "ITEM_X_ATTACK": 10,
+      "ITEM_X_DEFENSE": 10,
+      "ITEM_X_MIRACLE": 10,
+      "ITEM_SPECIAL_ATTACK": 12
+    }
+  },
+
+  "hunt": {
+    "cp_strong": 1500,
+    "cp_flee": 300,
+    "iv_flee": 40,
+    "approach_kmh": 4.5,
+    "ball_sequence": ["ITEM_ULTRA_BALL", "ITEM_GREAT_BALL", "ITEM_POKE_BALL"],
+    "use_razz_if_cp_above": true
+  },
+
+  "restock": {
+    "max_range_m": 45,
+    "approach_kmh": 5.0
+  },
+
+  "evolve": {
+    "min_iv": 82,
+    "favorite_iv": 91,
+    "max_per_session": 6
+  }
+}
