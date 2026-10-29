@@ -441,10 +441,22 @@
       refreshStatus();
     }
 
+    let initializedFromBackend = false;
     async function refreshStatus() {
       try {
         const r = await fetch('/api/status');
         const data = await r.json();
+
+        // Sincroniza a posição real inicial a partir do que o backend/jogo relatar
+        if (!initializedFromBackend && data.lat && data.lon) {
+          initializedFromBackend = true;
+          currentLat = data.lat;
+          currentLon = data.lon;
+          setInputs(currentLat, currentLon);
+          playerMarker.setLatLng([currentLat, currentLon]);
+          map.setView([currentLat, currentLon], 16);
+        }
+
         const select = document.getElementById('deviceSelect');
         const prev = select.value;
         select.innerHTML = '';
@@ -590,17 +602,27 @@
           const pts = data.routes[routeName];
           clearRoute();
           setMode('route');
+
+          // IMPORTANTE: NÃO teleportar instantaneamente pro primeiro ponto da rota!
+          // Se o usuário estiver distante, traçamos o caminho ou começamos de onde ele já está.
+          const firstPt = pts[0];
+          const distToFirst = haversineKm(currentLat, currentLon, firstPt[0], firstPt[1]) * 1000;
+
+          if (distToFirst > 20) {
+            // Se está longe do início, adiciona o primeiro ponto como waypoint para caminhar até lá
+            addWaypoint(firstPt[0], firstPt[1]);
+          }
+
           pts.forEach((pt, idx) => {
-            if (idx === 0) {
-              setInputs(pt[0], pt[1]);
-              playerMarker.setLatLng([pt[0], pt[1]]);
+            if (idx > 0 || distToFirst <= 20) {
+              addWaypoint(pt[0], pt[1]);
             }
-            addWaypoint(pt[0], pt[1]);
           });
+
           if (routeLine) {
             map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
           }
-          setStatus(`Circuito "${routeName}" carregado com ${pts.length} pontos pelas ruas! Clique em "Iniciar Rota".`);
+          setStatus(`Circuito "${routeName}" carregado (${pts.length} pontos). Clique em "Iniciar Rota" para caminhar até lá sem teleporte!`);
         }
       } catch (err) {
         setStatus('Erro ao carregar rota: ' + err);
