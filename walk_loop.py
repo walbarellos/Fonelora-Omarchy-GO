@@ -59,11 +59,12 @@ def fetch_street_route(from_pt, to_pt):
         return [from_pt, to_pt]
 
 def send_step(sock, lat, lon):
-    jitter_lat = (random.random() - 0.5) * 0.000002
-    jitter_lon = (random.random() - 0.5) * 0.000002
+    # Jitter espacial realista de GPS (variação de ~0.5m a 1.2m típica de satélites civis)
+    jitter_lat = (random.random() - 0.5) * 0.000010
+    jitter_lon = (random.random() - 0.5) * 0.000010
     payload = json.dumps({
         "Action": "SendPosition",
-        "data": {"Lat": lat + jitter_lat, "Lng": lon + jitter_lon}
+        "data": {"Lat": round(lat + jitter_lat, 7), "Lng": round(lon + jitter_lon, 7)}
     })
     sock.send_string(payload)
     return sock.recv_string()
@@ -81,8 +82,8 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
         print(f"Rota '{route_name}' não encontrada. Opções disponíveis: {list(routes.keys())}")
         route_name = list(routes.keys())[0] if routes else None
 
-    target_waypoints = [tuple(pt) for pt in routes[route_name]]
-    first_target_pt = target_waypoints[0]
+    base_waypoints = [tuple(pt) for pt in routes[route_name]]
+    first_target_pt = base_waypoints[0]
 
     ctx = zmq.Context()
     sock = ctx.socket(zmq.REQ)
@@ -92,8 +93,8 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
     sock.connect(f"tcp://127.0.0.1:{PORT}")
 
     print("=" * 65)
-    print("🎮 Fonelora Omarchy GO — Sistema Inteligente de Deslocamento")
-    print(f"📍 Rota Selecionada: [{route_name}] ({len(target_waypoints)} pontos)")
+    print("🎮 Fonelora Omarchy GO — Sistema Orgânico com Ruído Humano")
+    print(f"📍 Rota Base: [{route_name}] ({len(base_waypoints)} pontos)")
     print("=" * 65)
 
     # 1. Identificar posição atual
@@ -109,13 +110,9 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
 
     # 2. Se estiver longe do início da rota (> 15 metros), transitar rápido pelas ruas até lá
     if dist_to_start > 15.0:
-        transit_mps = transit_speed_kmh / 3.6 # ex: 28 km/h = 7.7 m/s
-        step_time = 0.5
-        step_dist = transit_mps * step_time
-
         print(f"\n🚗 [2/3] DESLOCAMENTO INTELIGENTE PELAS RUAS:")
         print(f"   Distância até o início da rota: {dist_to_start:.1f} metros")
-        print(f"   Velocidade de trânsito: {transit_speed_kmh:.1f} km/h (imitação de bike/carro)")
+        print(f"   Velocidade média de trânsito: ~{transit_speed_kmh:.1f} km/h (com variações de trânsito)")
 
         transit_path = fetch_street_route(current_pos, first_target_pt)
         print(f"   Traçado pelas ruas: {len(transit_path)} vértices.")
@@ -124,6 +121,13 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
             p1 = transit_path[i]
             p2 = transit_path[i+1]
             seg_dist = distance_meters(p1[0], p1[1], p2[0], p2[1])
+
+            # Variação dinâmica de velocidade no trânsito (semáforos, curvas: 22 a 32 km/h)
+            current_transit_kmh = transit_speed_kmh * random.uniform(0.85, 1.15)
+            transit_mps = current_transit_kmh / 3.6
+            step_time = random.uniform(0.4, 0.6)
+            step_dist = transit_mps * step_time
+
             steps = max(1, int(seg_dist / step_dist))
             for s in range(steps + 1):
                 frac = s / steps
@@ -144,32 +148,50 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
     else:
         print("[2/3] Você já está próximo do ponto inicial. Iniciando rota diretamente.\n")
 
-    # 3. Executar o circuito principal em loop contínuo
-    walk_mps = walk_speed_kmh / 3.6
-    step_time = 0.8
-    step_dist = walk_mps * step_time
-
-    print(f"🚶 [3/3] INICIANDO CIRCUITO [{route_name}]")
-    print(f"   Velocidade de caminhada: {walk_speed_kmh:.1f} km/h ({walk_mps:.1f} m/s)")
-    print(f"   Modo: Circuito Contínuo pelas Ruas")
+    # 3. Executar o circuito principal em loop contínuo com micro-ruído e variações humanas
+    print(f"🚶 [3/3] INICIANDO CIRCUITO ORGÂNICO [{route_name}]")
+    print(f"   Velocidade base: {walk_speed_kmh:.1f} km/h")
+    print(f"   Comportamento: Velocidade flutuante, pausas de Pokéstops e desvios de calçada.")
 
     loop_count = 0
     while True:
         loop_count += 1
-        print(f"\n--- Volta #{loop_count} do Circuito [{route_name}] ---")
-        for i in range(len(target_waypoints) - 1):
-            p1 = target_waypoints[i]
-            p2 = target_waypoints[i+1]
+        
+        # Em voltas alternadas, decide se faz sentido inverter o sentido (ida e volta)
+        # para não parecer um autômato girando sempre no mesmo sentido
+        waypoints = list(base_waypoints)
+        if loop_count % 3 == 0:
+            print(f"\n🔄 Volta #{loop_count}: Invertendo sentido do percurso para variação orgânica!")
+            waypoints = list(reversed(waypoints))
+        else:
+            print(f"\n--- Volta #{loop_count} do Circuito [{route_name}] ---")
+
+        for i in range(len(waypoints) - 1):
+            p1 = waypoints[i]
+            p2 = waypoints[i+1]
             seg_dist = distance_meters(p1[0], p1[1], p2[0], p2[1])
+
+            # Variação humana de caminhada:
+            # 1. Velocidade flutua entre -20% e +25% a cada trecho (passo humano não é metrônomo)
+            current_walk_kmh = walk_speed_kmh * random.uniform(0.78, 1.22)
+            walk_mps = current_walk_kmh / 3.6
+            
+            # 2. Variação no tempo de envio de pacotes (0.65s a 0.95s)
+            step_time = random.uniform(0.65, 0.95)
+            step_dist = walk_mps * step_time
             steps = max(1, int(seg_dist / step_dist))
 
-            if i % 15 == 0 or i == len(target_waypoints) - 2:
-                print(f"Progresso: ponto {i+1}/{len(target_waypoints)-1} ({seg_dist:.1f}m)")
+            if i % 15 == 0 or i == len(waypoints) - 2:
+                print(f"Progresso: ponto {i+1}/{len(waypoints)-1} ({seg_dist:.1f}m) @ {current_walk_kmh:.1f} km/h")
+
+            # 3. Micro-desvio de calçada (cada volta caminha num lado da rua / calçada ligeiramente diferente)
+            offset_lat = (random.random() - 0.5) * 0.000015
+            offset_lon = (random.random() - 0.5) * 0.000015
 
             for s in range(steps + 1):
                 frac = s / steps
-                cur_lat = p1[0] + (p2[0] - p1[0]) * frac
-                cur_lon = p1[1] + (p2[1] - p1[1]) * frac
+                cur_lat = p1[0] + (p2[0] - p1[0]) * frac + offset_lat
+                cur_lon = p1[1] + (p2[1] - p1[1]) * frac + offset_lon
                 try:
                     send_step(sock, cur_lat, cur_lon)
                 except Exception:
@@ -180,6 +202,30 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                     sock.setsockopt(zmq.LINGER, 0)
                     sock.connect(f"tcp://127.0.0.1:{PORT}")
                 time.sleep(step_time)
+
+            # 4. Pausas orgânicas humanas simuladas:
+            # - 10% de chance de parar 4 a 8s (capturar um Pokémon ou rodar Pokéstop)
+            # - 2% de chance de parar 12 a 22s (mochila / checar IV)
+            roll = random.random()
+            if roll < 0.02:
+                pause_s = random.uniform(12.0, 22.0)
+                print(f"   [Pausa humana] Parou {pause_s:.1f}s (simulando captura demorada/mochila)...")
+                t_end = time.time() + pause_s
+                while time.time() < t_end:
+                    try:
+                        send_step(sock, p2[0], p2[1])
+                    except Exception:
+                        pass
+                    time.sleep(random.uniform(0.8, 1.4))
+            elif roll < 0.12:
+                pause_s = random.uniform(3.5, 7.5)
+                t_end = time.time() + pause_s
+                while time.time() < t_end:
+                    try:
+                        send_step(sock, p2[0], p2[1])
+                    except Exception:
+                        pass
+                    time.sleep(random.uniform(0.8, 1.2))
 
 if __name__ == "__main__":
     # Argumentos opcionais:
