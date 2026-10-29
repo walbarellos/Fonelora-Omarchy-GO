@@ -78,33 +78,54 @@
     .sidebar {
       position: absolute; top: 76px; left: 14px; width: 360px; z-index: 1000;
       background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-      padding: 14px; display: flex; flex-direction: column; gap: 10px;
+      padding: 12px; display: flex; flex-direction: column; gap: 8px;
       box-shadow: 0 12px 32px rgba(0,0,0,0.45); backdrop-filter: blur(12px);
-      max-height: calc(100vh - 95px); overflow-y: auto;
+      max-height: calc(100vh - 90px); overflow-y: auto; overflow-x: hidden;
+      box-sizing: border-box;
       scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent;
     }
+    .sidebar * { box-sizing: border-box; }
     .sidebar::-webkit-scrollbar { width: 4px; }
     .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
 
     .card-section {
       background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+      border-radius: 10px; padding: 9px; display: flex; flex-direction: column; gap: 6px;
+      width: 100%; min-width: 0;
     }
     .section-title {
       font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.8px;
       color: var(--muted); font-weight: 700; display: flex; align-items: center; justify-content: space-between;
     }
+    .device-row {
+      display: flex; gap: 6px; align-items: center; width: 100%; min-width: 0;
+    }
+    .device-row select {
+      flex: 1; min-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+      background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 8px; border-radius: 6px; font-size: 11px;
+    }
+    .device-status-indicator {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px; padding: 4px 8px; border-radius: 6px;
+      background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06);
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px;
+    }
+    .dot.green { background: #10b981; box-shadow: 0 0 8px #10b981; }
+    .dot.red { background: #ef4444; }
     .coord-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .field { display: flex; flex-direction: column; gap: 4px; }
-    .field label { font-size: 11px; color: var(--muted); }
+    .field { display: flex; flex-direction: column; gap: 3px; }
+    .field label { font-size: 10.5px; color: var(--muted); }
     .field input, .field select {
       background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: var(--text);
-      padding: 6px 8px; border-radius: 6px; font-size: 12px; outline: none;
+      padding: 5px 7px; border-radius: 6px; font-size: 11.5px; outline: none; width: 100%;
     }
     .status-box {
-      font-size: 11.5px; padding: 8px 10px; border-radius: 8px;
+      font-size: 11px; padding: 7px 9px; border-radius: 6px;
       background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: #d1d5db;
-      line-height: 1.35;
+      line-height: 1.3; word-break: break-word;
     }
 
     /* Speed preset buttons */
@@ -172,14 +193,21 @@
 
   <div class="sidebar">
     <div class="card-section">
-      <div class="section-title">Dispositivo Android (ADB)</div>
-      <div style="display:flex;gap:6px;">
-        <select id="deviceSelect" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:6px;font-size:11.5px;"></select>
-        <button class="btn secondary" style="padding:6px 10px;font-size:11px;" onclick="connectAndroid()">Conectar</button>
+      <div class="section-title">
+        <span>Aparelho Android (ADB)</span>
+        <button class="btn secondary" style="padding:3px 8px;font-size:10px;" onclick="refreshStatus()">Atualizar</button>
       </div>
-      <div style="display:flex;gap:6px;">
-        <input id="wifiInput" type="text" placeholder="Wi-Fi (IP:5555)" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:6px;font-size:11px;" />
-        <button class="btn secondary" style="padding:5px 9px;font-size:11px;" onclick="connectWifi()">Wi-Fi</button>
+      
+      <div class="device-status-indicator">
+        <div style="display:flex;align-items:center;">
+          <span id="deviceStatusDot" class="dot red"></span>
+          <span id="deviceStatusText" style="font-weight:600;font-size:11px;">Buscando...</span>
+        </div>
+        <button id="connectActionBtn" class="btn secondary" style="padding:3px 8px;font-size:10.5px;" onclick="connectAndroid()">Reconectar</button>
+      </div>
+
+      <div class="device-row">
+        <select id="deviceSelect"></select>
       </div>
     </div>
 
@@ -429,19 +457,43 @@
           data.devices.forEach(d => {
             const opt = document.createElement('option');
             opt.value = d.serial;
-            opt.textContent = `${d.model} (${d.serial}) [${d.state}]`;
+            const shortSerial = d.serial.length > 18 ? d.serial.slice(0, 15) + '...' : d.serial;
+            opt.textContent = `${d.model} (${shortSerial}) [${d.state}]`;
             select.appendChild(opt);
           });
           if (prev) select.value = prev;
         }
         const online = data.devices.filter(d => d.state === 'device');
         const badge = document.getElementById('deviceBadge');
+        const dot = document.getElementById('deviceStatusDot');
+        const statusTxt = document.getElementById('deviceStatusText');
+        const actionBtn = document.getElementById('connectActionBtn');
+
         if (online.length > 0) {
+          const m = online[0].model;
           badge.className = 'badge online';
-          badge.textContent = data.is_mocking ? `Simulando (${online[0].model})` : `ADB Pronto (${online[0].model})`;
+          badge.textContent = `Online: ${m}`;
+          if (dot) dot.className = 'dot green';
+          if (statusTxt) {
+            statusTxt.textContent = `Conectado: ${m}`;
+            statusTxt.style.color = '#34d399';
+          }
+          if (actionBtn) {
+            actionBtn.textContent = 'Pronto ✓';
+            actionBtn.className = 'btn secondary';
+          }
         } else {
           badge.className = 'badge offline';
           badge.textContent = 'USB/ADB Desconectado';
+          if (dot) dot.className = 'dot red';
+          if (statusTxt) {
+            statusTxt.textContent = 'Desconectado';
+            statusTxt.style.color = '#f87171';
+          }
+          if (actionBtn) {
+            actionBtn.textContent = 'Conectar';
+            actionBtn.className = 'btn';
+          }
         }
       } catch (e) {}
     }
