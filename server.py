@@ -229,6 +229,32 @@ class AndroidLocationController:
 
             return False, self.last_error or "Falha ao enviar coordenadas ao Android"
 
+    def get_pogo_position(self) -> tuple[float, float] | None:
+        """Consulta onde o avatar está agora no jogo via ZMQ (Single Source of Truth)."""
+        try:
+            import zmq
+            self._run_adb(["forward", f"tcp:{POGO_LOCAL_PORT}", f"tcp:{POGO_DEVICE_PORT}"])
+            ctx = zmq.Context.instance()
+            sock = ctx.socket(zmq.REQ)
+            sock.setsockopt(zmq.RCVTIMEO, 1000)
+            sock.setsockopt(zmq.SNDTIMEO, 1000)
+            sock.setsockopt(zmq.LINGER, 0)
+            sock.connect(f"tcp://127.0.0.1:{POGO_LOCAL_PORT}")
+            sock.send_string(json.dumps({"Action": "CurrentPosition"}))
+            raw = sock.recv_string()
+            sock.close()
+            data = json.loads(raw)
+            if data.get("State") == 200 and "data" in data:
+                lat = float(data["data"]["Lat"])
+                lng = float(data["data"]["Lng"])
+                if lat != 0.0 and lng != 0.0:
+                    self.current_lat = lat
+                    self.current_lon = lng
+                    return (lat, lng)
+        except Exception:
+            pass
+        return None
+
     def _send_pogo_zmq(self, lat: float, lon: float) -> bool:
         """Attempts injecting location into Pokémon GO via custom ZeroMQ interface (tcp://*:7878)."""
         try:
@@ -290,6 +316,8 @@ class FoneloraHTTPHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/status":
             devices = controller.list_devices()
+            # Sempre consulta a posição real viva do jogo antes de responder
+            controller.get_pogo_position()
             self._send_json(
                 {
                     "ok": True,
