@@ -308,6 +308,103 @@ class AndroidLocationController:
 controller = AndroidLocationController()
 
 
+class BotManager:
+    """Gerencia o subprocesso do bot_brain.py (start/stop) e expõe o estado.
+
+    O bot_brain publica seu estado rico em .bot_brain_state.json; o server só
+    repassa para o /api/bot e controla o processo via SIGTERM (graceful — o
+    bot limpa .bot_pause e publica phase=stopped na saída).
+    """
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.proc: subprocess.Popen | None = None
+        self.log_path = BASE_DIR / "bot_web.log"
+
+    def is_running(self) -> bool:
+        with self.lock:
+            return self.proc is not None and self.proc.poll() is None
+
+    def _tail_log(self, n: int = 40) -> list[str]:
+        try:
+            if self.log_path.is_file():
+                lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                return lines[-n:]
+        except Exception:
+            pass
+        return []
+
+    def state(self) -> dict:
+        brain = {}
+        state_file = BASE_DIR / ".bot_brain_state.json"
+        if state_file.is_file():
+            try:
+                brain = json.loads(state_file.read_text(encoding="utf-8"))
+                # expira estado velho (>15s => processo morto sem limpar)
+                if time.time() - brain.get("timestamp", 0) > 15:
+                    brain["running"] = False
+                    if brain.get("phase") not in ("stopped",):
+                        brain["phase"] = "stopped"
+            except Exception:
+                pass
+        brain["processRunning"] = self.is_running()
+        return brain
+
+    def start(self, solo: bool = False) -> tuple[bool, str]:
+        with self.lock:
+            if self.proc is not None and self.proc.poll() is None:
+                return False, "Bot já está em execução."
+            brain_py = BASE_DIR / "bot_brain.py"
+            if not brain_py.is_file():
+                return False, "bot_brain.py não encontrado."
+            py = BASE_DIR / ".venv/bin/python3"
+            cmd = [str(py) if py.is_file() else sys.executable, str(brain_py)]
+            if solo:
+                cmd.append("--solo")
+            out = self.log_path.open("a", encoding="utf-8")
+            out.write(f"\n=== bot iniciado {time.strftime('%Y-%m-%d %H:%M:%S')} (solo={solo}) ===\n")
+            out.flush()
+            try:
+                self.proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=out,
+                                             stderr=subprocess.STDOUT, text=True)
+            except Exception as e:
+                out.close()
+                return False, f"Falha ao iniciar bot: {e}"
+            return True, f"Bot iniciado (PID {self.proc.pid})."
+
+    def stop(self) -> tuple[bool, str]:
+        with self.lock:
+            if self.proc is None or self.proc.poll() is not None:
+                return False, "Bot não está em execução."
+            pid = self.proc.pid
+            try:
+                self.proc.terminate()  # SIGTERM => KeyboardInterrupt no bot
+            except Exception as e:
+                return False, f"Falha ao sinalizar bot: {e}"
+            return True, f"Bot sinalizado para parar (PID {pid})."
+
+    def save_config(self, patch: dict) -> tuple[bool, str]:
+        try:
+            cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception as e:
+            return False, f"bot_config.json ilegível: {e}"
+        # aplica só chaves de política conhecidas (whitelist — evita poluir)
+        allowed_top = {"inventory", "hunt", "restock", "evolve"}
+        for k, v in (patch or {}).items():
+            if k in allowed_top and isinstance(v, dict):
+                cfg.setdefault(k, {}).update(v)
+        try:
+            CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False),
+                                   encoding="utf-8")
+            return True, "Configuração do bot salva."
+        except Exception as e:
+            return False, f"Falha ao salvar config: {e}"
+
+
+CONFIG_FILE = BASE_DIR / "bot_config.json"
+bot_manager = BotManager()
+
+
 class FoneloraHTTPHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
         pass
@@ -353,6 +450,16 @@ class FoneloraHTTPHandler(BaseHTTPRequestHandler):
                     "bot_state": bot_state,
                 }
             )
+            return
+
+        if parsed.path == "/api/bot":
+            cfg = {}
+            if CONFIG_FILE.is_file():
+                try:
+                    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            self._send_json({"ok": True, "bot": bot_manager.state(), "config": cfg})
             return
 
         if parsed.path == "/api/routes":
@@ -414,6 +521,22 @@ class FoneloraHTTPHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/stop":
             ok, msg = controller.stop_mocking()
             self._send_json({"ok": ok, "message": msg, "is_mocking": False})
+            return
+
+        if parsed.path == "/api/bot/start":
+            solo = bool(body.get("solo", False))
+            ok, msg = bot_manager.start(solo=solo)
+            self._send_json({"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/bot/stop":
+            ok, msg = bot_manager.stop()
+            self._send_json({"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/bot/config":
+            ok, msg = bot_manager.save_config(body.get("config", body))
+            self._send_json({"ok": ok, "message": msg})
             return
 
         if parsed.path == "/api/wifi-connect":
