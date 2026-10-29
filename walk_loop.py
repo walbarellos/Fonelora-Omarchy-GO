@@ -61,9 +61,10 @@ def fetch_street_route(from_pt, to_pt):
 PAUSE_FILE = Path(__file__).resolve().parent / ".bot_pause"
 
 def send_step(sock, lat, lon):
-    # Jitter espacial realista de GPS (variação de ~0.5m a 1.2m típica de satélites civis)
-    jitter_lat = (random.random() - 0.5) * 0.000010
-    jitter_lon = (random.random() - 0.5) * 0.000010
+    # Jitter Físico de Satélite GPS (Distribuição Gaussiana / Normal)
+    # 68% das leituras ficam em torno de ±0.4m, com raras flutuações de até 1.1m
+    jitter_lat = random.gauss(0.0, 0.000004)
+    jitter_lon = random.gauss(0.0, 0.000004)
     payload = json.dumps({
         "Action": "SendPosition",
         "data": {"Lat": round(lat + jitter_lat, 7), "Lng": round(lon + jitter_lon, 7)}
@@ -220,11 +221,31 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                 time.sleep(step_time)
 
             # 4. Pausas orgânicas humanas simuladas:
-            # - 10% de chance de parar 4 a 8s (capturar um Pokémon ou rodar Pokéstop)
-            # - 2% de chance de parar 12 a 22s (mochila / checar IV)
+            # - 10% de chance de micro-parada de 4 a 8s (girar Pokéstop / captura rápida)
+            # - 2% de chance de parada de 15 a 30s (verificar IV / organizar bolsa)
+            # - 0.5% de chance de pausa humana realista de 1 a 19 minutos (café, banco de praça, semáforo longo, conversa)
             roll = random.random()
-            if roll < 0.02:
-                pause_s = random.uniform(12.0, 22.0)
+            if roll < 0.005:
+                # Pausa longa e ultra-humana: de 1 a 19 minutos
+                pause_min = random.uniform(1.0, 19.0)
+                pause_s = pause_min * 60.0
+                print(f"\n☕ [Pausa Humana Longa] Parou por {pause_min:.1f} minutos ({int(pause_s)}s) no ponto...")
+                print("   (Simulando parar em praça/café/banco — satélite continua com drift natural)")
+                t_end = time.time() + pause_s
+                last_notice = time.time()
+                while time.time() < t_end:
+                    try:
+                        send_step(sock, p2[0], p2[1])
+                    except Exception:
+                        pass
+                    if time.time() - last_notice >= 60.0:
+                        remaining_min = (t_end - time.time()) / 60.0
+                        print(f"   ... ainda em pausa: restam {remaining_min:.1f} min")
+                        last_notice = time.time()
+                    time.sleep(random.uniform(1.2, 2.5))
+                print("🚶 [Fim da Pausa] Retomando caminhada orgânica!\n")
+            elif roll < 0.025:
+                pause_s = random.uniform(15.0, 30.0)
                 print(f"   [Pausa humana] Parou {pause_s:.1f}s (simulando captura demorada/mochila)...")
                 t_end = time.time() + pause_s
                 while time.time() < t_end:
@@ -232,16 +253,16 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                         send_step(sock, p2[0], p2[1])
                     except Exception:
                         pass
-                    time.sleep(random.uniform(0.8, 1.4))
+                    time.sleep(random.uniform(1.0, 2.0))
             elif roll < 0.12:
-                pause_s = random.uniform(3.5, 7.5)
+                pause_s = random.uniform(4.0, 8.5)
                 t_end = time.time() + pause_s
                 while time.time() < t_end:
                     try:
                         send_step(sock, p2[0], p2[1])
                     except Exception:
                         pass
-                    time.sleep(random.uniform(0.8, 1.2))
+                    time.sleep(random.uniform(0.9, 1.4))
 
 if __name__ == "__main__":
     # Argumentos opcionais:
