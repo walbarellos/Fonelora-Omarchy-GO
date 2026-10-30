@@ -94,28 +94,30 @@ def adb_screencap() -> Optional[np.ndarray]:
 # Verified Screen State Classifiers
 # ---------------------------------------------------------------------------
 
-def is_main_menu_open(img: np.ndarray) -> bool:
-    """Detects if the main Pokéball options menu (Pokédex, Batalhar, Loja, Pokémon, Itens) is open."""
-    if img is None or img.shape[0] < 2400:
-        return False
-    b, g, r = img[2300, 540]
-    # In main menu, (540, 2300) is bright white circular X AND (540, 2265) is NOT Pokéball red
-    b_top, g_top, r_top = img[2265, 540]
-    return (int(b) + int(g) + int(r)) > 680 and not (int(r_top) > 195 and int(b_top) < 115)
-
-
 def is_map_screen(img: np.ndarray) -> bool:
-    """3-point Red-Center-White signature check on the map HUD Pokéball at bottom-center."""
+    """20x20 patch Red-Top + White-Bottom signature check on the map HUD Pokéball,
+    100% immune to single-pixel walking bounce or pulse animations."""
     if img is None or img.shape[0] < 2400:
         return False
-    b1, g1, r1 = int(img[2265, 540, 0]), int(img[2265, 540, 1]), int(img[2265, 540, 2])
-    r2 = int(img[2310, 540, 2])
-    b3, g3, r3 = int(img[2350, 540, 0]), int(img[2350, 540, 1]), int(img[2350, 540, 2])
-    return (
-        r1 > 195 and b1 < 115 and g1 < 105
-        and 100 < r2 < 220
-        and r3 > 210 and g3 > 210 and b3 > 210
-    )
+    top_patch = img[2255:2275, 530:550]
+    bot_patch = img[2340:2360, 530:550]
+    top_red = ((top_patch[:, :, 2] > 190) & (top_patch[:, :, 0] < 120) & (top_patch[:, :, 1] < 110)).mean() > 0.50
+    bot_wht = (bot_patch.min(axis=2) > 205).mean() > 0.50
+    return bool(top_red and bot_wht)
+
+
+def is_main_menu_open(img: np.ndarray) -> bool:
+    """Detects if the main Pokéball options menu (Pokédex, Batalhar, Loja, Pokémon, Itens) is open
+    by verifying the 3 white circular menu buttons AND excluding solid-white summary cards."""
+    if img is None or img.shape[0] < 2400 or is_map_screen(img):
+        return False
+    mid_not_card = img[1250:1400, 350:700].min(axis=2).mean() < 225
+    if not mid_not_card:
+        return False
+    c_pokedex = (img[1560:1640, 195:275].min(axis=2) > 210).mean()
+    c_batalhar = (img[1560:1640, 725:805].min(axis=2) > 210).mean()
+    c_loja = (img[1775:1855, 460:540].min(axis=2) > 210).mean()
+    return bool(c_pokedex > 0.40 and c_batalhar > 0.40 and c_loja > 0.40)
 
 
 def is_encounter_screen(img: np.ndarray) -> bool:
