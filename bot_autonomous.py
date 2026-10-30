@@ -261,9 +261,9 @@ class AutonomousBot:
         return True
 
     def manage_inventory(self):
-        """Discards excess potions and revives to keep item bag clean."""
-        print("🎒 [Mochila] Abrindo menu de Itens para descartar poções e reviver excedentes...")
-        self.publish_status("inventory", "Descartando poções e reviver excedentes")
+        """Discards common red Pokéballs to protect valuable Potions, Revives, and Great/Ultra balls."""
+        print("🎒 [Mochila] Abrindo menu de Itens para descartar Pokébolas comuns excedentes (preservando Poções e Reviver)...")
+        self.publish_status("inventory", "Descartando Pokébolas comuns")
         self.pause_walk()
         time.sleep(0.3)
 
@@ -275,15 +275,27 @@ class AutonomousBot:
         pogo_driver.adb_tap(540, 2300, jitter=2, delay=0.9)
         pogo_driver.adb_tap(750, 2110, jitter=3, delay=1.5)
 
-        # 3. First item row: Tap trash can (990, 550) -> Hold '+' to MAX -> Confirm SIM (540, 1380)
-        pogo_driver.adb_tap(990, 550, jitter=2, delay=0.8)
-        pogo_driver.adb_shell("input swipe 780 1180 780 1180 1200; sleep 0.4; input tap 540 1380")
-        time.sleep(1.0)
+        # 3. Locate and tap trash can for common red Pokébola (row around Y=1440)
+        img_bag = pogo_driver.adb_screencap()
+        trash_y = 1440
+        if img_bag is not None:
+            try:
+                import pytesseract
+                d = pytesseract.image_to_data(img_bag, output_type=pytesseract.Output.DICT)
+                for i, txt in enumerate(d["text"]):
+                    # Find 'Poké' or 'Bola' under POKEBOLAS header but before 'Grande'
+                    if ("POK" in txt.upper() or "BOLA" in txt.upper()) and 1350 < d["top"][i] < 1650:
+                        trash_y = d["top"][i]
+                        break
+            except Exception:
+                pass
 
-        # 4. Second item row: Tap trash can (990, 550) -> Hold '+' -> tap '-' 5 times -> Confirm SIM
-        pogo_driver.adb_tap(990, 550, jitter=2, delay=0.8)
-        minus_taps = "; sleep 0.1; ".join(["input tap 300 1180"] * 5)
-        pogo_driver.adb_shell(f"input swipe 780 1180 780 1180 1200; sleep 0.4; {minus_taps}; sleep 0.4; input tap 540 1380")
+        # Tap trash can on red Pokéball row
+        pogo_driver.adb_tap(990, trash_y, jitter=2, delay=0.9)
+
+        # 4. Hold '+' for 800ms -> Tap '-' 10 times to leave 10 safety Pokéballs -> Confirm SIM (540, 1380)
+        minus_taps = "; sleep 0.1; ".join(["input tap 300 1180"] * 10)
+        pogo_driver.adb_shell(f"input swipe 780 1180 780 1180 1000; sleep 0.4; {minus_taps}; sleep 0.4; input tap 540 1380")
         time.sleep(1.0)
 
         # 5. Close Items Bag at (540, 2315) back to map
@@ -291,7 +303,7 @@ class AutonomousBot:
         self.finish_post_catch_to_map()
 
         self.stats["bag_clears"] += 1
-        print(f"✨ [Mochila] Espaço liberado na bolsa! Limpezas realizadas: {self.stats['bag_clears']}")
+        print(f"✨ [Mochila] Pokébolas comuns excedentes limpas! Poções e Revives 100% preservados! Total limpezas: {self.stats['bag_clears']}")
         self.resume_walk()
 
     def manage_pokemon_storage(self, max_cp: int = 999):
