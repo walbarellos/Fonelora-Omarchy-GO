@@ -159,15 +159,14 @@ def has_close_or_check_button(img: np.ndarray) -> bool:
     if is_item_drawer_open(img):
         return False
     roi_close = (2260, 2380, 480, 600)
-    if template_matcher.match_template_in_roi(img, "btn_summary_check.png", roi_bbox=roi_close, threshold=0.82):
+    if template_matcher.match_template_in_roi(img, "btn_summary_check.png", roi_bbox=roi_close, threshold=0.80):
         return True
-    if template_matcher.match_template_in_roi(img, "btn_close_x.png", roi_bbox=roi_close, threshold=0.82):
+    if template_matcher.match_template_in_roi(img, "btn_close_x.png", roi_bbox=roi_close, threshold=0.80):
         return True
     roi = img[2275:2365, 495:585]
     hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
     teal_check = (cv2.inRange(hsv_roi, (82, 100, 75), (108, 255, 230)) > 0).mean() > 0.22
-    white_close = (roi.min(axis=2) > 200).mean() > 0.25 and int(img[2320, 300].min()) < 190
-    return bool(teal_check or white_close)
+    return bool(teal_check)
 
 
 def has_catch_ok_button(img: np.ndarray) -> bool:
