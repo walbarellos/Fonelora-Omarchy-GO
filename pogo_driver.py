@@ -122,14 +122,15 @@ def run_away_from_encounter():
     time.sleep(1.5)
 
 def detect_spawns(img: np.ndarray):
-    """Detects Pokémon spawns around player interaction radius."""
+    """Detects Pokémon spawns around player interaction radius, strictly ignoring the avatar pulse ring."""
     if img is None:
         return []
     h, w, _ = img.shape
     # Focus on radius around player (540, 1600)
     mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.circle(mask, (540, 1600), 420, 255, -1)
-    cv2.circle(mask, (540, 1600), 140, 0, -1) # exclude avatar
+    cv2.circle(mask, (540, 1600), 440, 255, -1)
+    # Mask out avatar AND the pulse ripple inner zone (radius 235 around avatar)
+    cv2.circle(mask, (540, 1600), 235, 0, -1)
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 40, 120)
@@ -142,9 +143,13 @@ def detect_spawns(img: np.ndarray):
         if 80 < area < 25000:
             x, y, cw, ch = cv2.boundingRect(c)
             # Avoid bottom HUD buttons
-            if y + ch > 2100 or y < 1100:
+            if y + ch > 2050 or y < 1050:
                 continue
-            spawns.append((x + cw//2, y + ch//2, area))
+            # Avoid the central vertical pulse axis directly below avatar
+            cx, cy = x + cw//2, y + ch//2
+            if abs(cx - 540) < 40 and cy > 1750:
+                continue
+            spawns.append((cx, cy, area))
     
     # Sort closest to avatar
     spawns.sort(key=lambda s: (s[0]-540)**2 + (s[1]-1600)**2)
@@ -155,7 +160,11 @@ def execute_curveball_throw():
     adb_swipe(540, 2150, 540, 1250, 150)
 
 def detect_pokestops(img: np.ndarray):
-    """Detects nearby Pokéstops by blue or event-orange disk signature, strictly ignoring tall Gym towers."""
+    """Detects nearby AVAILABLE Pokéstops (Orange or Blue).
+    Strictly ignores:
+      - Cooldown / used Pokéstops (Purple / Lilac)
+      - Tall Gym towers
+    """
     if img is None:
         return []
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -164,6 +173,12 @@ def detect_pokestops(img: np.ndarray):
     # Event / Halloween Orange Pokéstop disk:
     orange_mask = cv2.inRange(hsv, (5, 120, 100), (25, 255, 255))
     stop_mask = cv2.bitwise_or(blue_mask, orange_mask)
+
+    # Filter out Cooldown (Purple/Lilac/Magenta) stops: Hue 130 to 175
+    cooldown_mask = cv2.inRange(hsv, (130, 60, 60), (175, 255, 255))
+    kernel = np.ones((7, 7), np.uint8)
+    cooldown_dilated = cv2.dilate(cooldown_mask, kernel, iterations=2)
+    stop_mask = cv2.bitwise_and(stop_mask, cv2.bitwise_not(cooldown_dilated))
 
     stop_mask[:500, :] = 0
     stop_mask[2000:, :] = 0
