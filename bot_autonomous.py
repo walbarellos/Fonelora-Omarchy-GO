@@ -255,12 +255,15 @@ class AutonomousBot:
         self.stats["spins"] += 1
         print(f"✨ [Pokéstop] Fotodisco coletado e fechado! Total giros: {self.stats['spins']}")
         self.publish_status("walking", f"Pokéstop coletado ({self.stats['spins']} total)")
+        if self.stats["spins"] % 8 == 0:
+            print("🎒 [Mochila] Limpeza periódica preventiva (a cada 8 giros)...")
+            self.manage_inventory()
         return True
 
     def manage_inventory(self):
-        """ONLY place in the entire codebase allowed to tap the map Pokéball menu (540, 2300)."""
-        print("🎒 [Mochila] Abrindo menu da Pokébola para descartar itens excedentes...")
-        self.publish_status("inventory", "Descartando itens excedentes")
+        """Discards excess potions and revives to keep item bag clean."""
+        print("🎒 [Mochila] Abrindo menu de Itens para descartar poções e reviver excedentes...")
+        self.publish_status("inventory", "Descartando poções e reviver excedentes")
         self.pause_walk()
         time.sleep(0.3)
 
@@ -268,24 +271,27 @@ class AutonomousBot:
         if img is not None and not pogo_driver.is_map_screen(img):
             self.finish_post_catch_to_map()
 
-        # 1. Open Pokéball Menu -> 2. Tap ITENS (840, 2070)
+        # 1. Open Pokéball Menu (540, 2300) -> 2. Tap ITENS (750, 2110)
         pogo_driver.adb_tap(540, 2300, jitter=2, delay=0.9)
-        pogo_driver.adb_tap(840, 2070, jitter=3, delay=1.6)
+        pogo_driver.adb_tap(750, 2110, jitter=3, delay=1.5)
 
-        # 3. Tap trash can on top potion row (999, 572)
-        pogo_driver.adb_tap(999, 572, jitter=2, delay=0.9)
+        # 3. First item row: Tap trash can (990, 550) -> Hold '+' to MAX -> Confirm SIM (540, 1380)
+        pogo_driver.adb_tap(990, 550, jitter=2, delay=0.8)
+        pogo_driver.adb_shell("input swipe 780 1180 780 1180 1200; sleep 0.4; input tap 540 1380")
+        time.sleep(1.0)
 
-        # 4. Increase discard quantity (+ at 792, 1206) rapidly via single shell loop & confirm SIM (540, 1360)
-        plus_taps = "; ".join(["input tap 792 1206"] * 12)
-        pogo_driver.adb_shell(f"{plus_taps}; sleep 0.3; input tap 540 1360")
-        time.sleep(1.1)
+        # 4. Second item row: Tap trash can (990, 550) -> Hold '+' -> tap '-' 5 times -> Confirm SIM
+        pogo_driver.adb_tap(990, 550, jitter=2, delay=0.8)
+        minus_taps = "; sleep 0.1; ".join(["input tap 300 1180"] * 5)
+        pogo_driver.adb_shell(f"input swipe 780 1180 780 1180 1200; sleep 0.4; {minus_taps}; sleep 0.4; input tap 540 1380")
+        time.sleep(1.0)
 
-        # 5. Close Items Bag at (540, 2325)
-        pogo_driver.adb_tap(540, 2325, jitter=2, delay=0.8)
+        # 5. Close Items Bag at (540, 2315) back to map
+        pogo_driver.adb_tap(540, 2315, jitter=2, delay=1.15)
         self.finish_post_catch_to_map()
 
         self.stats["bag_clears"] += 1
-        print(f"✨ [Mochila] Espaço liberado na bolsa! Limpezas: {self.stats['bag_clears']}")
+        print(f"✨ [Mochila] Espaço liberado na bolsa! Limpezas realizadas: {self.stats['bag_clears']}")
         self.resume_walk()
 
     def manage_pokemon_storage(self, max_cp: int = 999):

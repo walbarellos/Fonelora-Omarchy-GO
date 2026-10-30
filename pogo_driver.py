@@ -509,17 +509,17 @@ def spin_and_collect_stop(x: int, y: int) -> Tuple[bool, str]:
     if is_encounter_screen(img_open):
         return False, "encounter"
 
-    # Spin photodisc cleanly
-    adb_swipe(200, 1150, 880, 1150, duration_ms=160, delay=0.55)
+    # Spin photodisc cleanly and wait 1.1s for 'Sua bolsa está cheia' toast to render
+    adb_swipe(200, 1150, 880, 1150, duration_ms=160, delay=1.10)
 
     bag_full = False
     img_spun = adb_screencap()
     if img_spun is not None:
         try:
             import pytesseract
-            top_roi = img_spun[220:520, 120:960]
+            top_roi = img_spun[180:550, 80:1000]
             txt = pytesseract.image_to_string(top_roi).upper()
-            if "BOLSA" in txt or "CHEIA" in txt or "LOTAD" in txt:
+            if any(w in txt for w in ("BOLSA", "CHEIA", "LOTAD", "FULL", "BAG")):
                 bag_full = True
         except Exception:
             pass
