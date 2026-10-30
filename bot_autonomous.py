@@ -248,16 +248,12 @@ class AutonomousBot:
             return False
 
         if status == "bag_full":
-            print("⚠️ [Pokéstop] Notificação de BOLSA CHEIA detectada! Limpando inventário agora...")
-            self.manage_inventory()
+            print("⚠️ [Pokéstop] Notificação de BOLSA CHEIA! Pokéstops pausados (descarte automático desativado para segurança).")
             return False
 
         self.stats["spins"] += 1
         print(f"✨ [Pokéstop] Fotodisco coletado e fechado! Total giros: {self.stats['spins']}")
         self.publish_status("walking", f"Pokéstop coletado ({self.stats['spins']} total)")
-        if self.stats["spins"] % 8 == 0:
-            print("🎒 [Mochila] Limpeza periódica preventiva (a cada 8 giros)...")
-            self.manage_inventory()
         return True
 
     def manage_inventory(self):
