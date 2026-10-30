@@ -127,26 +127,32 @@ class AutonomousBot:
         cp = pogo_driver.extract_encounter_cp(img)
         min_cp_to_catch = self.config.get("hunt", {}).get("cp_flee", 100)
         if 0 < cp < min_cp_to_catch:
-            print(f"⏩ [Hunt] CP baixo ({cp} < {min_cp_to_catch}). Ignorando/fugindo do combate...")
+            print(f"⏩ [Hunt] CP muito baixo ({cp} < {min_cp_to_catch}). Fugindo do combate...")
             pogo_driver.run_away_from_encounter()
             self.stats["fled"] += 1
             self.resume_walk()
             return False
 
-        # 1. Feed Berry immediately (Frambo / Razz Berry)
+        # 1. Smart Ball Selection by CP:
+        # CP < 500: Standard Pokéball (saves Ultra Ball for formidable monsters)
+        # 500 <= CP < 1200: Great Ball
+        # CP >= 1200: Ultra Ball
+        pogo_driver.select_ball_by_cp(cp)
+
+        # 2. Feed Berry (Frambo / Razz Berry)
         print("🍓 [Combat] Alimentando Pokémon com Fruta Frambo (Razz Berry)...")
         pogo_driver.feed_berry_in_combat()
 
-        # 2. Multi-throw rapid loop:
+        # 3. High-velocity Multi-throw loop:
         for throw_attempt in range(1, 4):
-            print(f"⚔️ [Combat] Arremesso {throw_attempt}/3: Curva rápida autêntica...")
+            print(f"⚔️ [Combat] Arremesso {throw_attempt}/3: Curva rápida calibrada...")
             pogo_driver.execute_curveball_throw()
             
-            # Realistic ball wobble duration: ~3.8 to 4.2s
-            time.sleep(4.0)
+            # Fast ball wobble duration (3 shakes: ~3.5s)
+            time.sleep(3.6)
             img_chk = pogo_driver.adb_screencap()
             
-            # If returned to map, caught!
+            # If directly returned to map, caught!
             if pogo_driver.is_map_screen(img_chk):
                 self.stats["catches"] += 1
                 print(f"🎉 [Hunt] Captura concluída! Total: {self.stats['catches']}")
@@ -154,11 +160,14 @@ class AutonomousBot:
                 self.resume_walk()
                 return True
 
-            # If not map, dismiss XP and summary screens
-            pogo_driver.adb_tap(540, 1500)
-            time.sleep(0.4)
-            pogo_driver.adb_tap(540, 2330)
-            time.sleep(0.5)
+            # If still in encounter screen, ball broke free! Immediately re-throw without wasting time
+            if pogo_driver.is_encounter_screen(img_chk):
+                print(f"⚠️ [Combat] Pokémon escapou da bola no arremesso {throw_attempt}! Re-arremessando imediatamente...")
+                continue
+
+            # Otherwise, caught or showing XP/summary/pokedex screen: dismiss ultra-fast (<1.5s)
+            pogo_driver.dismiss_catch_screens()
+            time.sleep(0.3)
             img_after = pogo_driver.adb_screencap()
             if pogo_driver.is_map_screen(img_after):
                 self.stats["catches"] += 1
@@ -167,12 +176,13 @@ class AutonomousBot:
                 self.resume_walk()
                 return True
 
-            # Check if ball broke free and we need a backup ball:
+            # Check if another dismissal tap is needed
             if not pogo_driver.is_encounter_screen(img_after):
+                pogo_driver.dismiss_popups(img_after)
                 break
 
         self.resume_walk()
-        time.sleep(0.5)
+        time.sleep(0.3)
         return True
 
     def handle_pokestop(self, stop_coord) -> bool:

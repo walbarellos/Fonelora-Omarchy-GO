@@ -68,13 +68,26 @@ def is_map_screen(img: np.ndarray) -> bool:
     return r > 100 and g > 100 and b > 100
 
 def is_encounter_screen(img: np.ndarray) -> bool:
-    """Checks if in Pokémon encounter screen."""
+    """Checks if in Pokémon encounter screen by verifying flee button icon at top-left (100, 180)
+    or Pokeball/Berry icons at the bottom."""
     if img is None:
         return False
-    # In encounter, top left has flee icon and bottom center has Pokeball ready to throw
-    # Pokeball at (540, 2150) is bright red/white
-    b, g, r = img[2150, 540]
-    return r > 120 and b < 60 and g < 60
+    # Top-left flee button: (100, 180) typically has white icon with dark/colored background
+    # Check flee button region mean/contrast or flee pixel
+    b, g, r = img[180, 100]
+    # In encounter, flee button is active and distinct from map screen (where map is grass/road/sky)
+    # Also verify that it's NOT the map screen
+    if is_map_screen(img):
+        return False
+    # Flee button icon has high contrast / specific hue:
+    flee_region = img[150:210, 80:130]
+    if flee_region.size > 0:
+        # Check standard deviation or contrast indicating running-man icon
+        if np.std(flee_region) > 25:
+            return True
+    # Fallback: check red Pokeball at bottom center
+    b_ball, g_ball, r_ball = img[2150, 540]
+    return r_ball > 110 and b_ball < 70
 
 def detect_glowing_boxes(img: np.ndarray):
     """Detects glowing mystery / treat / event boxes on the map."""
@@ -155,10 +168,6 @@ def detect_spawns(img: np.ndarray):
     spawns.sort(key=lambda s: (s[0]-540)**2 + (s[1]-1600)**2)
     return spawns
 
-def execute_curveball_throw():
-    """Performs an authentic curveball flick to capture Pokémon."""
-    adb_swipe(540, 2150, 540, 1250, 150)
-
 def detect_pokestops(img: np.ndarray):
     """Detects nearby AVAILABLE Pokéstops (Orange or Blue).
     Strictly ignores:
@@ -202,22 +211,55 @@ def feed_berry_in_combat():
     """Feeds a Razz Berry instantly to the Pokémon."""
     # 1. Tap bottom-left Berry icon
     adb_tap(135, 2235)
-    time.sleep(0.45)
+    time.sleep(0.35)
     # 2. Tap Fruta Frambo (first icon in list at ~220, 1050)
     adb_tap(220, 1050)
-    time.sleep(0.3)
+    time.sleep(0.25)
     # 3. Quick flick forward to feed Pokémon
-    adb_swipe(540, 1600, 540, 1100, 120)
-    time.sleep(0.9)
+    adb_swipe(540, 1600, 540, 1100, 100)
+    time.sleep(0.7)
 
-def select_great_or_ultra_ball():
-    """Selects Great Ball or Ultra Ball if standard Pokéballs are empty or for tough Pokémon."""
+def select_ball_by_cp(cp: int):
+    """Smart ball selection based on CP and rarity:
+    - CP < 500: Standard Pokéball (slot 1: 200, 2150) - NEVER wastes Ultra Ball!
+    - 500 <= CP < 1200: Great Ball (slot 2: 530, 2150)
+    - CP >= 1200: Ultra Ball (slot 3: 850, 2150) reserved for truly formidable monsters.
+    If CP == 0 (unscanned), defaults to Pokéball.
+    """
+    if cp < 500:
+        # Standard Pokéball is already active by default in slot 1
+        # Only open drawer if we previously switched to a different ball
+        return
+    
     # Open ball drawer at bottom-right
     adb_tap(940, 2150)
-    time.sleep(0.45)
-    # Tap Great Ball (middle slot at 530, 2150)
-    adb_tap(530, 2150)
+    time.sleep(0.35)
+    
+    if cp >= 1200:
+        print(f"🔥 [Combat] CP formidável ({cp})! Selecionando ULTRA BALL...")
+        adb_tap(850, 2150)
+    else:
+        print(f"⚡ [Combat] CP intermediário ({cp}). Selecionando GREAT BALL...")
+        adb_tap(530, 2150)
+    time.sleep(0.25)
+
+def dismiss_catch_screens():
+    """Rapid dismissal of post-catch animations (XP celebration, new Pokédex entry, OK checkmark, and summary X).
+    Total duration under 1.8 seconds.
+    """
+    # 1. Tap center of screen twice rapidly to skip 'POKEMON PEGO' and XP tally animation
+    adb_tap(540, 1500)
     time.sleep(0.3)
+    adb_tap(540, 1500)
+    time.sleep(0.3)
+    # 2. Tap OK checkmark button at (540, 2330)
+    adb_tap(540, 2330)
+    time.sleep(0.3)
+    # 3. Tap bottom-center (540, 2330 / 2300) to close appraisal/summary screen and return to map
+    adb_tap(540, 2330)
+    time.sleep(0.3)
+    adb_tap(540, 2180)
+    time.sleep(0.2)
 
 def execute_curveball_throw():
     """Performs an authentic, high-power human curveball spin & flick.
