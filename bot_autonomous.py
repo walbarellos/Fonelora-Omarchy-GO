@@ -197,38 +197,56 @@ class AutonomousBot:
         self.stats["spins"] += 1
         print(f"✨ [Pokéstop] Fotodisco coletado em ~1s! Total giros: {self.stats['spins']}")
         self.publish_status("walking", f"Pokéstop coletado ({self.stats['spins']} total)")
+
+        # Check if bag full toast appeared ('Sua Bolsa está cheia' / 'lotado')
+        # If so, manage inventory immediately:
+        try:
+            import pytesseract
+            img_chk = pogo_driver.adb_screencap()
+            if img_chk is not None:
+                top_roi = img_chk[300:700, 100:980]
+                txt = pytesseract.image_to_string(top_roi).upper()
+                if "BOLSA" in txt or "CHEIA" in txt or "LOTADO" in txt:
+                    print("⚠️ [Pokéstop] Notificação de BOLSA CHEIA detectada! Iniciando limpeza de inventário...")
+                    self.manage_inventory()
+        except Exception:
+            pass
+
         return True
 
     def manage_inventory(self):
-        """Discards excess potions or berries if bag space is constrained."""
-        print("🎒 [Mochila] Verificando itens para descarte automático...")
-        self.publish_status("inventory", "Gerenciando inventário")
+        """Discards excess potions or berries automatically when bag is full (375/375)."""
+        print("🎒 [Mochila] Bolsa cheia detectada! Executando descarte inteligente de poções excedentes...")
+        self.publish_status("inventory", "Descartando poções excedentes")
         self.pause_walk()
         time.sleep(0.5)
 
-        # Open Pokeball Menu -> Items
+        # 1. Open Pokéball Menu
         pogo_driver.adb_tap(540, 2300)
-        time.sleep(1.5)
-        pogo_driver.adb_tap(820, 1920) # Items button
+        time.sleep(1.0)
+        # 2. Tap ITENS button at (840, 2070)
+        pogo_driver.adb_tap(840, 2070)
         time.sleep(2.0)
 
-        # Discard top potions/excess items if trash can visible
-        # Trash can at top row: approx (990, 490)
-        pogo_driver.adb_tap(990, 490)
-        time.sleep(1.0)
-        # Increase quantity (+) button: approx (750, 1300)
-        for _ in range(5):
-            pogo_driver.adb_tap(750, 1300)
-            time.sleep(0.1)
-        # Confirm discard "SIM" button: approx (540, 1600)
-        pogo_driver.adb_tap(540, 1600)
-        time.sleep(1.0)
+        # 3. Tap trash can on first item row (Superpocao) at (999, 572)
+        pogo_driver.adb_tap(999, 572)
+        time.sleep(1.2)
 
-        # Close bag back to map
-        pogo_driver.adb_tap(540, 2300)
+        # 4. Increase quantity (+) button at (792, 1206)
+        for _ in range(12):
+            pogo_driver.adb_tap(792, 1206)
+            time.sleep(0.1)
+
+        # 5. Confirm discard "SIM" button at (540, 1360)
+        pogo_driver.adb_tap(540, 1360)
         time.sleep(1.5)
 
+        # 6. Close bag back to map: tap close 'X' at (540, 2330)
+        pogo_driver.adb_tap(540, 2330)
+        time.sleep(1.2)
+
         self.stats["bag_clears"] += 1
+        print("✨ [Mochila] 12 poções descartadas com sucesso! Espaço liberado na bolsa.")
         self.resume_walk()
 
     def vision_cycle(self):

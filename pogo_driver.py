@@ -47,16 +47,41 @@ def is_main_menu_open(img: np.ndarray) -> bool:
     b, g, r = img[2300, 540]
     return (int(b) + int(g) + int(r)) > 680
 
+def is_exit_dialog_open(img: np.ndarray) -> bool:
+    """Detects if 'Quer sair do Pokémon GO?' exit dialog is open."""
+    if img is None:
+        return False
+    # Check dialog center or title
+    try:
+        import pytesseract
+        roi = img[980:1100, 200:880]
+        txt = pytesseract.image_to_string(roi).strip()
+        return "SAIR" in txt.upper() or "QUER" in txt.upper()
+    except Exception:
+        return False
+
 def dismiss_popups(img: np.ndarray = None):
     """Safely dismisses open dialogs, menus, or summary popups without EVER tapping the map Pokéball."""
-    if img is not None and is_main_menu_open(img):
-        # Close options menu by sending Android BACK key or tapping X
-        adb_cmd("shell", "input keyevent 4")
+    if img is None:
+        return
+    # If exit dialog appeared ('Quer sair do Pokémon GO?'):
+    if is_exit_dialog_open(img):
+        # Tap outside dialog at top center (540, 500) to cancel exit
+        adb_tap(540, 500)
         time.sleep(0.8)
         return
-    # Use Android BACK keyevent 4 to safely dismiss any open dialog, news, or modal:
-    # Keyevent 4 never clicks coordinates and therefore NEVER opens the Pokéball menu or shop!
-    adb_cmd("shell", "input keyevent 4")
+    # If main options menu is open:
+    if is_main_menu_open(img):
+        adb_tap(540, 2300) # Close X button
+        time.sleep(0.8)
+        return
+    # If open Pokéstop or modal:
+    if is_pokestop_screen(img):
+        adb_tap(540, 2330) # Close X button
+        time.sleep(0.6)
+        return
+    # Default safe fallback: tap outside modal area (540, 500)
+    adb_tap(540, 500)
     time.sleep(0.5)
 
 def is_map_screen(img: np.ndarray) -> bool:
@@ -308,8 +333,8 @@ def execute_curveball_throw():
     adb_cmd("shell", "input swipe 540 2200 450 2150 70; input swipe 450 2150 600 950 100")
 
 def spin_and_collect_stop(x: int, y: int) -> bool:
-    """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it.
-    Uses Android BACK key and verified screen check to guarantee 0% chance of tapping the map Pokéball."""
+    """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it cleanly.
+    Uses targeted close 'X' button tap at (540, 2330) and verifies return to map without triggering exit dialog."""
     # 1. Tap to open stop
     adb_tap(x, y)
     time.sleep(0.7)
@@ -318,14 +343,13 @@ def spin_and_collect_stop(x: int, y: int) -> bool:
     adb_swipe(200, 1100, 880, 1100, 120)
     time.sleep(0.35)
     
-    # 3. Safely close Pokéstop screen:
-    # First send Android BACK keyevent 4 (clean native close)
-    adb_cmd("shell", "input keyevent 4")
-    time.sleep(0.4)
+    # 3. Clean close: tap the Pokéstop 'X' close button at (540, 2330)
+    adb_tap(540, 2330)
+    time.sleep(0.5)
     
-    # If still not on map, send another keyevent 4
+    # Check if closed to map; if not, tap (540, 2330) once more
     img_chk = adb_screencap()
     if img_chk is not None and not is_map_screen(img_chk):
-        adb_cmd("shell", "input keyevent 4")
-        time.sleep(0.3)
+        adb_tap(540, 2330)
+        time.sleep(0.4)
     return True
