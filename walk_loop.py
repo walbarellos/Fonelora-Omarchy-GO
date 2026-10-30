@@ -15,7 +15,8 @@ import time
 import urllib.request
 import zmq
 
-PORT = 17878
+ZMQ_HOST = os.environ.get("POGO_ZMQ_HOST", "192.168.100.11")
+PORT = int(os.environ.get("POGO_ZMQ_PORT", "7878"))
 ROUTES_FILE = Path(__file__).resolve().parent / "routes_data.json"
 STATE_FILE = Path(__file__).resolve().parent / ".bot_state.json"
 HOME = (-9.975487, -67.821538)
@@ -133,7 +134,7 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
     sock.setsockopt(zmq.RCVTIMEO, 1500)
     sock.setsockopt(zmq.SNDTIMEO, 1500)
     sock.setsockopt(zmq.LINGER, 0)
-    sock.connect(f"tcp://127.0.0.1:{PORT}")
+    sock.connect(f"tcp://{ZMQ_HOST}:{PORT}")
 
     print("=" * 65)
     print("🎮 Fonelora Omarchy GO — Sistema Orgânico com Ruído Humano")
@@ -185,7 +186,7 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                     sock.setsockopt(zmq.RCVTIMEO, 1500)
                     sock.setsockopt(zmq.SNDTIMEO, 1500)
                     sock.setsockopt(zmq.LINGER, 0)
-                    sock.connect(f"tcp://127.0.0.1:{PORT}")
+                    sock.connect(f"tcp://{ZMQ_HOST}:{PORT}")
                 time.sleep(step_time)
 
         print("[✓] Chegada ao ponto inicial da rota concluída com sucesso!\n")
@@ -256,7 +257,7 @@ def run_loop(route_name: str = "tour_centro", walk_speed_kmh: float = 8.0, trans
                     sock.setsockopt(zmq.RCVTIMEO, 1500)
                     sock.setsockopt(zmq.SNDTIMEO, 1500)
                     sock.setsockopt(zmq.LINGER, 0)
-                    sock.connect(f"tcp://127.0.0.1:{PORT}")
+                    sock.connect(f"tcp://{ZMQ_HOST}:{PORT}")
                 time.sleep(step_time)
 
             # 4. Pausas orgânicas humanas simuladas:

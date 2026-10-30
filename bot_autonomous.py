@@ -42,7 +42,8 @@ CONFIG_FILE = BASE / "bot_config.json"
 ROUTES_FILE = BASE / "routes_data.json"
 PAUSE_FILE = BASE / ".bot_pause"
 STATE_FILE = BASE / ".bot_state.json"
-PORT = 17878
+ZMQ_HOST = os.environ.get("POGO_ZMQ_HOST", "192.168.100.11")
+PORT = int(os.environ.get("POGO_ZMQ_PORT", "7878"))
 
 
 VIP_TARGETS = (
@@ -418,7 +419,7 @@ class AutonomousBot:
         sock.setsockopt(zmq.RCVTIMEO, 1500)
         sock.setsockopt(zmq.SNDTIMEO, 1500)
         sock.setsockopt(zmq.LINGER, 0)
-        sock.connect(f"tcp://127.0.0.1:{PORT}")
+        sock.connect(f"tcp://{ZMQ_HOST}:{PORT}")
 
         try:
             sock.send_string(json.dumps({"Action": "CurrentPosition"}))
@@ -486,7 +487,7 @@ class AutonomousBot:
                     sock.setsockopt(zmq.RCVTIMEO, 1500)
                     sock.setsockopt(zmq.SNDTIMEO, 1500)
                     sock.setsockopt(zmq.LINGER, 0)
-                    sock.connect(f"tcp://127.0.0.1:{PORT}")
+                    sock.connect(f"tcp://{ZMQ_HOST}:{PORT}")
                 except Exception:
                     pass
 
