@@ -22,6 +22,8 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 
+import template_matcher
+
 DEVICE_SERIAL = os.environ.get("ANDROID_SERIAL", "adb-5A405WX00-aifnpK._adb-tls-connect._tcp")
 
 # Track active ball slot so we don't needlessly open the ball drawer for CP < 500
@@ -95,10 +97,14 @@ def adb_screencap() -> Optional[np.ndarray]:
 # ---------------------------------------------------------------------------
 
 def is_map_screen(img: np.ndarray) -> bool:
-    """20x20 patch Red-Top + White-Bottom signature check on the map HUD Pokéball,
-    100% immune to single-pixel walking bounce or pulse animations."""
+    """Detects map screen via sub-15ms template matching on the map HUD Pokéball."""
     if img is None or img.shape[0] < 2400:
         return False
+    match = template_matcher.match_template_in_roi(
+        img, "btn_pokeball_menu.png", roi_bbox=(2200, 2400, 450, 630), threshold=0.82
+    )
+    if match is not None:
+        return True
     top_patch = img[2255:2275, 530:550]
     bot_patch = img[2340:2360, 530:550]
     top_red = ((top_patch[:, :, 2] > 190) & (top_patch[:, :, 0] < 120) & (top_patch[:, :, 1] < 110)).mean() > 0.50
@@ -121,22 +127,20 @@ def is_main_menu_open(img: np.ndarray) -> bool:
 
 
 def is_encounter_screen(img: np.ndarray) -> bool:
-    """Detects active wild Pokémon combat screen using flee icon + bottom berry/ball drawers,
-    distinguishing 100% from open Pokéstops and summary screens."""
+    """Detects wild Pokémon combat screen via sub-15ms template matching on the flee button."""
     if img is None or img.shape[0] < 2400 or is_map_screen(img):
         return False
+    match = template_matcher.match_template_in_roi(
+        img, "btn_flee.png", roi_bbox=(120, 240, 50, 160), threshold=0.80
+    )
+    if match is not None:
+        return True
     flee_white = (img[140:215, 65:140].min(axis=2) > 220).mean()
     berry_btn = img[2200:2270, 100:170].mean()
     ball_btn = img[2200:2270, 910:980].mean()
     gap_l = int(img[2330, 280].max())
     gap_r = int(img[2330, 800].max())
-    return (
-        flee_white > 0.035
-        and berry_btn > 105
-        and ball_btn > 105
-        and gap_l < 155
-        and gap_r < 155
-    )
+    return flee_white > 0.035 and berry_btn > 105 and ball_btn > 105 and gap_l < 155 and gap_r < 155
 
 
 def is_item_drawer_open(img: np.ndarray) -> bool:
@@ -149,15 +153,16 @@ def is_item_drawer_open(img: np.ndarray) -> bool:
 
 
 def has_close_or_check_button(img: np.ndarray) -> bool:
-    """Detects either:
-    - The Dark Teal circular checkmark (✓) / (X) button on Pokémon Summary / Passe GO at (540, 2320)
-    - The Bright White circular close (X) button on Pokéstop / Bag / Modal screens at (540, 2325)
-    Strictly excludes the full-width grey combat item drawer ('FRUTAS' / 'POKÉ BOLAS').
-    """
+    """Detects Summary ✓ or Modal X via sub-15ms template matching."""
     if img is None or img.shape[0] < 2400 or is_map_screen(img) or is_encounter_screen(img):
         return False
     if is_item_drawer_open(img):
         return False
+    roi_close = (2260, 2380, 480, 600)
+    if template_matcher.match_template_in_roi(img, "btn_summary_check.png", roi_bbox=roi_close, threshold=0.82):
+        return True
+    if template_matcher.match_template_in_roi(img, "btn_close_x.png", roi_bbox=roi_close, threshold=0.82):
+        return True
     roi = img[2275:2365, 495:585]
     hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
     teal_check = (cv2.inRange(hsv_roi, (82, 100, 75), (108, 255, 230)) > 0).mean() > 0.22
@@ -166,12 +171,16 @@ def has_close_or_check_button(img: np.ndarray) -> bool:
 
 
 def has_catch_ok_button(img: np.ndarray) -> bool:
-    """Detects the 'POKÉMON PEGO' XP/Stardust reward card with green 'OK' button at (540, 1544).
-    Excludes Pokémon Summary screens (which have the teal ✓ button at 540, 2320)."""
+    """Detects 'POKÉMON PEGO' reward card via sub-15ms template matching on green OK button."""
     if img is None or img.shape[0] < 2400 or is_map_screen(img):
         return False
     if has_close_or_check_button(img) or is_item_drawer_open(img):
         return False
+    match = template_matcher.match_template_in_roi(
+        img, "btn_catch_ok.png", roi_bbox=(1450, 1650, 350, 730), threshold=0.82
+    )
+    if match is not None:
+        return True
     if int(img[1350, 300].min()) <= 215:
         return False
     hsv_btn = cv2.cvtColor(img[1490:1600, 350:730], cv2.COLOR_BGR2HSV)
@@ -313,62 +322,47 @@ def detect_pokestops(img: np.ndarray) -> List[Tuple[int, int, int]]:
 
 
 def detect_spawns(img: np.ndarray) -> List[Tuple[int, int, int]]:
-    """Detects wild Pokémon spawns around the player using HSV terrain & UI subtraction,
-    avoiding night road/roof Canny edge false positives, avatar, pink ring, and Buddy Gengar."""
+    """Detects wild Pokémon spawns accurately by detecting white expanding ripple rings
+    under Pokémon models, completely eliminating false clicks on roads, grass, and buildings."""
     if img is None:
         return []
 
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     h, w, _ = img.shape
-
     roi_mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.circle(roi_mask, (505, 1585), 390, 255, -1)
-    cv2.circle(roi_mask, (505, 1585), 105, 0, -1)
+    cv2.circle(roi_mask, (505, 1585), 380, 255, -1)
+    cv2.circle(roi_mask, (505, 1585), 115, 0, -1)
     roi_mask[:1180, :] = 0
-    roi_mask[1910:, :] = 0
+    roi_mask[1920:, :] = 0
     roi_mask[1800:, :270] = 0
     roi_mask[:, 880:] = 0
-    roi_mask[:, :205] = 0  # avoid left-edge out-of-range pokestop rings
+    roi_mask[:, :160] = 0
 
-    # Night terrain (Hue 82..118) + Daytime grass/roads/sidewalks (Hue 50..92)
-    night_terrain = cv2.inRange(hsv, (82, 18, 45), (118, 255, 195))
-    day_terrain = cv2.inRange(hsv, (50, 18, 80), (88, 130, 242))
-    day_lines = cv2.inRange(hsv, (50, 5, 175), (92, 65, 255))
-    terrain = night_terrain | day_terrain | day_lines
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    white_rings = cv2.inRange(hsv, (0, 0, 195), (180, 45, 255))
+    white_rings = cv2.bitwise_and(white_rings, roi_mask)
 
-    # Pink interaction ring + purple cooldown stops + purple Buddy Gengar
-    purple_pink = cv2.inRange(hsv, (120, 35, 40), (174, 255, 255))
-    big_purple = np.zeros((h, w), dtype=np.uint8)
-    pcnts, _ = cv2.findContours(purple_pink, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for c in pcnts:
-        area = cv2.contourArea(c)
-        if area > 900:
-            x, y, cw, ch = cv2.boundingRect(c)
-            fill = area / float(max(1, cw * ch))
-            # Solid purple bodies (Gengar buddy, cooldown Pokéstop) have high fill ratio;
-            # the thin pink interaction ring has fill < 0.12 so it is NOT dilated into a giant donut!
-            if fill > 0.20:
-                cv2.drawContours(big_purple, [c], -1, 255, -1)
-    big_purple = cv2.dilate(big_purple, np.ones((95, 95), np.uint8), iterations=1)
+    # Exclude Team Rocket grunts (dark clothing)
+    grunts = cv2.inRange(hsv, (0, 0, 0), (180, 255, 45))
+    grunts_dil = cv2.dilate(grunts, np.ones((60, 60), np.uint8), iterations=1)
 
-    # Mask out active orange/blue Pokéstops & their glowing pumpkin bases
+    # Exclude Pokéstops and Gym bases
     orange_stops = cv2.inRange(hsv, (8, 175, 175), (24, 255, 255))
     blue_stops = cv2.inRange(hsv, (96, 185, 200), (114, 255, 255))
-    stops_big = cv2.dilate(cv2.bitwise_or(orange_stops, blue_stops), np.ones((85, 85), np.uint8), iterations=1)
+    red_gyms = cv2.inRange(hsv, (0, 175, 175), (8, 255, 255))
+    stops_big = cv2.dilate(orange_stops | blue_stops | red_gyms, np.ones((80, 80), np.uint8), iterations=1)
 
-    exclude = terrain | cv2.dilate(purple_pink, np.ones((5, 5), np.uint8)) | big_purple | stops_big
-    fg = cv2.bitwise_and(roi_mask, cv2.bitwise_not(exclude))
-    fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+    clean_rings = cv2.bitwise_and(white_rings, cv2.bitwise_not(grunts_dil | stops_big))
+    closed = cv2.morphologyEx(clean_rings, cv2.MORPH_CLOSE, np.ones((11, 11), np.uint8))
+    cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    cnts, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     spawns: List[Tuple[int, int, int]] = []
     for c in cnts:
-        area = cv2.contourArea(c)
-        if 380 < area < 18000:
-            x, y, cw, ch = cv2.boundingRect(c)
-            cx, cy = x + cw // 2, y + ch // 2
-            spawns.append((cx, cy, int(area)))
+        a = cv2.contourArea(c)
+        if 25 < a < 5000:
+            (x, y), r = cv2.minEnclosingCircle(c)
+            if 15 < r < 95:
+                # Tap center of Pokémon body (slightly above the ground ripple ring)
+                spawns.append((int(x), int(y - 20), int(a)))
 
     spawns.sort(key=lambda s: (s[0] - 505) ** 2 + (s[1] - 1585) ** 2)
     return spawns

@@ -27,7 +27,13 @@
     "iv_flee": 40,
     "approach_kmh": 4.5,
     "ball_sequence": ["ITEM_ULTRA_BALL", "ITEM_GREAT_BALL", "ITEM_POKE_BALL"],
-    "use_razz_if_cp_above": true
+    "use_razz_if_cp_above": true,
+    "ignore_species": [
+      "PUMPKABOO", "ZUBAT", "LILLIPUP", "YUNGOOS", "RATTATA",
+      "PIDGEY", "WOOLOO", "BIDOOF", "FURFROU", "SENTRET",
+      "HOPPIP", "CUTIEFLY", "VENIPEDE", "DUSKULL", "ZIGZAGOON", "POOCHYENA"
+    ],
+    "ignore_if_cp_below": 1200
   },
 
   "restock": {

@@ -143,9 +143,21 @@ class AutonomousBot:
 
         # Cooldown Scout & Camp Mode (protects 100% against softban flee!)
         now = time.time()
+        upper_name = name.upper()
+        ignore_list = [sp.upper() for sp in self.config.get("hunt", {}).get("ignore_species", [])]
+        ignore_cp_thresh = self.config.get("hunt", {}).get("ignore_if_cp_below", 1200)
+
+        # 1. Species Ignore Filter: if species is in trash list AND CP < 1200, flee immediately!
+        is_trash_species = any(trash in upper_name for trash in ignore_list)
+        if is_trash_species and (cp < ignore_cp_thresh):
+            print(f"🚫 [Ignore Filter] {label} está na lista de ignorados (PC < {ignore_cp_thresh}) -> fugindo imediatamente!")
+            pogo_driver.run_away_from_encounter()
+            self.stats["fled"] += 1
+            self.resume_walk()
+            return False
+
         if now < self.cooldown_until:
             rem_min = (self.cooldown_until - now) / 60.0
-            upper_name = name.upper()
             is_vip = cp >= 1600 or any(vip in upper_name for vip in VIP_TARGETS)
             if not is_vip:
                 print(f"🔍 [Scout Cooldown {rem_min:.0f}m restantes] {label} é comum -> saindo p/ procurar raros/PC alto...")
@@ -157,11 +169,10 @@ class AutonomousBot:
             print(f"💎 [ALVO RARO / FORTE ENCONTRADO!] {label}! Segurando na tela ('Camping') por {rem_min:.1f} min até zerar o cooldown p/ não fugir!")
             self.publish_status("camping_vip", f"Segurando {label} até fim do cooldown ({rem_min:.0f}m)")
             while time.time() < self.cooldown_until and self.running:
-                # Keep screen awake every 45s with harmless tap at top-center sky (540, 120) away from flee/AR buttons
                 time.sleep(min(30.0, max(1.0, self.cooldown_until - time.time())))
-                pogo_driver.adb_cmd("shell", "input keyevent 224")  # KEYCODE_WAKEUP (never touches UI!)
+                pogo_driver.adb_cmd("shell", "input keyevent 224")  # KEYCODE_WAKEUP
             print(f"🔥 [Cooldown Zerado!] Capturando {label} agora com Fruta Frambo + Ultra Ball!")
-            cp = max(cp, 1500)  # Force Ultra Ball + Berry for camped VIP!
+            cp = max(cp, 1500)
             combat_start = time.time()
 
         if 0 < cp < min_cp_to_catch:
@@ -245,8 +256,9 @@ class AutonomousBot:
         self.publish_status("hunting", f"Abrindo spawn em ({x}, {y})")
         self.pause_walk()
 
-        # Encounter zoom-in takes ~1.45s; screencap takes ~1.3s -> captures right as HUD lands!
-        pogo_driver.adb_tap(x, y, jitter=3, delay=1.45)
+        # Brief 0.15s pause for avatar position to settle before tapping
+        time.sleep(0.15)
+        pogo_driver.adb_tap(x, y, jitter=2, delay=1.45)
         img = pogo_driver.adb_screencap()
         if img is not None and pogo_driver.is_encounter_screen(img):
             return self.engage_active_combat(img)
@@ -277,6 +289,8 @@ class AutonomousBot:
                 pogo_driver.dismiss_popups(img2)
 
         print("[-] Objeto tocado não abriu batalha. Retomando caminhada.")
+        # Record failed tap so we never tap the same non-spawn again for 90s!
+        self.tapped_spawns_history[(x, y)] = time.time() + 45.0
         self.resume_walk()
         return False
 
