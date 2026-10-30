@@ -157,19 +157,16 @@ class AutonomousBot:
         return True
 
     def handle_pokestop(self, stop_coord) -> bool:
-        """Opens, spins, and collects Pokéstop photodisc."""
+        """Opens, spins, and collects Pokéstop photodisc at vehicle/pedestrian transit speed."""
         x, y = stop_coord
-        print(f"🌀 [Pokéstop] Acessando Pokéstop em ({x}, {y})...")
+        print(f"🌀 [Pokéstop] Acesso rápido a Pokéstop em ({x}, {y})...")
         self.publish_status("restocking", f"Girando Pokéstop em ({x}, {y})")
-        self.pause_walk()
-        time.sleep(0.5)
-
+        
+        # Don't full-stop walking for Pokéstops if walking naturally, just brief touch
         pogo_driver.spin_and_collect_stop(x, y)
         self.stats["spins"] += 1
-        print(f"✨ [Pokéstop] Fotodisco girado com sucesso! Total giros: {self.stats['spins']}")
+        print(f"✨ [Pokéstop] Fotodisco coletado em ~1s! Total giros: {self.stats['spins']}")
         self.publish_status("walking", f"Pokéstop coletado ({self.stats['spins']} total)")
-        self.resume_walk()
-        time.sleep(1.0)
         return True
 
     def manage_inventory(self):
