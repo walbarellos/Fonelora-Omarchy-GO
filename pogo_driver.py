@@ -76,14 +76,50 @@ def is_encounter_screen(img: np.ndarray) -> bool:
     b, g, r = img[2150, 540]
     return r > 120 and b < 60 and g < 60
 
-def is_catch_success_screen(img: np.ndarray) -> bool:
-    """Checks if 'POKEMON PEGO' or summary checkmark is visible."""
+def detect_glowing_boxes(img: np.ndarray):
+    """Detects glowing mystery / treat / event boxes on the map."""
     if img is None:
-        return False
-    # Bottom center has green checkmark or OK button
-    # Let's check text or bottom center color
-    b, g, r = img[2300, 540]
-    return (b, g, r) != (168, 170, 148)
+        return []
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    # Bright glowing orange/gold or sparkling items
+    gold_mask = cv2.inRange(hsv, (12, 120, 140), (38, 255, 255))
+    gold_mask[:900, :] = 0
+    gold_mask[1900:, :] = 0
+    # Exclude player avatar
+    cv2.circle(gold_mask, (540, 1600), 120, 0, -1)
+    
+    cnts, _ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    boxes = []
+    for c in cnts:
+        a = cv2.contourArea(c)
+        if 40 < a < 8000:
+            x, y, w, h = cv2.boundingRect(c)
+            boxes.append((x + w//2, y + h//2, a))
+    boxes.sort(key=lambda b: (b[0]-540)**2 + (b[1]-1600)**2)
+    return boxes
+
+def extract_encounter_cp(img: np.ndarray) -> int:
+    """Extracts CP of the Pokémon currently in the encounter screen."""
+    if img is None:
+        return 0
+    try:
+        import pytesseract
+        # CP banner is at top center: y: 650..950, x: 250..850
+        roi = img[650:950, 250:850]
+        txt = pytesseract.image_to_string(roi).strip()
+        # Look for 'PC' or 'CP' followed by digits
+        import re
+        m = re.search(r'(?:PC|CP)\s*([0-9]{2,5})', txt, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
+    return 0
+
+def run_away_from_encounter():
+    """Taps the flee / run away button at the top left (100, 180)."""
+    adb_tap(100, 180)
+    time.sleep(1.5)
 
 def detect_spawns(img: np.ndarray):
     """Detects Pokémon spawns around player interaction radius."""

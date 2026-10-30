@@ -123,7 +123,17 @@ class AutonomousBot:
             self.resume_walk()
             return False
 
-        print("⚔️ [Combat] Tela de captura ativa! Lançando Pokébola com curva...")
+        # Check CP threshold from bot_config.json
+        cp = pogo_driver.extract_encounter_cp(img)
+        min_cp_to_catch = self.config.get("hunt", {}).get("cp_flee", 100)
+        if 0 < cp < min_cp_to_catch:
+            print(f"⏩ [Hunt] CP baixo ({cp} < {min_cp_to_catch}). Ignorando/fugindo do combate...")
+            pogo_driver.run_away_from_encounter()
+            self.stats["fled"] += 1
+            self.resume_walk()
+            return False
+
+        print(f"⚔️ [Combat] Tela de captura ativa (CP: {cp})! Lançando Pokébola com curva...")
         pogo_driver.execute_curveball_throw()
         
         # Wait for ball wobble and catch result (approx 7-8s)
@@ -203,6 +213,15 @@ class AutonomousBot:
         if not pogo_driver.is_map_screen(img):
             # Check for dismissal popups (level up, daily streak, notifications, open menus)
             pogo_driver.dismiss_popups(img)
+            return
+
+        # Priority 0: Check for Glowing Boxes (Treat / Mystery / Candy boxes)
+        boxes = pogo_driver.detect_glowing_boxes(img)
+        if boxes:
+            box = boxes[0]
+            print(f"🎁 [Caixa] Coletando caixa brilhante em ({box[0]}, {box[1]})...")
+            pogo_driver.adb_tap(box[0], box[1])
+            time.sleep(1.5)
             return
 
         # Priority 1: Check for Spawns
