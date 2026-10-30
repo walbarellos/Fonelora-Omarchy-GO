@@ -214,6 +214,18 @@ class AutonomousBot:
         if img is not None and pogo_driver.is_encounter_screen(img):
             return self.engage_active_combat(img)
 
+        # Check if "Sua Coleção de Pokémon está cheia" toast/modal appeared when tapping a spawn!
+        if img is not None:
+            try:
+                import pytesseract
+                banner_txt = pytesseract.image_to_string(img[220:650, 100:980]).upper()
+                if ("POK" in banner_txt or "COLE" in banner_txt) and ("CHEIA" in banner_txt or "LOTAD" in banner_txt):
+                    print("⚠️ [PokéBox] Coleção de Pokémon cheia detectada! Liberando PC < 1000 automaticamente...")
+                    self.manage_pokemon_storage(max_cp=999)
+                    return False
+            except Exception:
+                pass
+
         # If zoom-in animation was still mid-transition (not map, HUD not yet faded in), wait 0.45s
         if img is not None and not pogo_driver.is_map_screen(img):
             if pogo_driver.has_close_or_check_button(img) or pogo_driver.has_catch_ok_button(img):
@@ -288,6 +300,63 @@ class AutonomousBot:
 
         self.stats["bag_clears"] += 1
         print(f"✨ [Mochila] Espaço liberado na bolsa! Limpezas: {self.stats['bag_clears']}")
+        self.resume_walk()
+
+    def manage_pokemon_storage(self, max_cp: int = 999):
+        """Automatically mass-transfers non-special Pokémon up to max_cp (e.g. pc-999).
+        Uses Pokémon GO's native SELECIONAR TUDO (which automatically protects Shinies,
+        Legendaries, Mythicals, Favorites, Buddies, and Gym Defenders) and favorites any
+        last Dynamax Pokémon first so the batch transfer succeeds in 1 click."""
+        print(f"📦 [PokéBox] Iniciando transferência em massa segura (pc-{max_cp})...")
+        self.publish_status("inventory", f"Liberando Pokémons PC <= {max_cp}")
+        self.pause_walk()
+        time.sleep(0.4)
+
+        img = pogo_driver.adb_screencap()
+        if img is not None and not pogo_driver.is_map_screen(img):
+            self.finish_post_catch_to_map()
+
+        # 1. Open Pokéball Menu (540, 2300) -> POKÉMON storage (240, 2070)
+        pogo_driver.adb_tap(540, 2300, jitter=2, delay=0.95)
+        pogo_driver.adb_tap(240, 2070, jitter=3, delay=2.20)
+
+        # 2. Protect last Dynamax Pokémon if un-favorited so SELECIONAR TUDO never blocks:
+        pogo_driver.adb_shell('input tap 500 355; sleep 0.85; input text "dinamax"; sleep 0.4; input keyevent 66')
+        time.sleep(1.0)
+        # Tap first Dynamax if present, favorite star at top-right (985, 195), close summary (540, 2315)
+        img_dmax = pogo_driver.adb_screencap()
+        if img_dmax is not None:
+            # Check if at least 1 sprite tile exists at (195, 720) (non-uniform white)
+            if img_dmax[640:800, 115:275].std() > 14:
+                pogo_driver.adb_tap(195, 720, jitter=2, delay=1.1)
+                # Only tap favorite star if not already yellow/gold
+                star_roi = img_dmax = pogo_driver.adb_screencap()
+                if star_roi is not None:
+                    hsv_star = pogo_driver.cv2.cvtColor(star_roi[150:250, 930:1030], pogo_driver.cv2.COLOR_BGR2HSV)
+                    if (pogo_driver.cv2.inRange(hsv_star, (15, 120, 180), (35, 255, 255)) > 0).mean() < 0.05:
+                        pogo_driver.adb_tap(982, 198, jitter=2, delay=0.5)
+                    pogo_driver.adb_tap(540, 2315, jitter=2, delay=1.0)
+        # Clear 'dinamax' search (tap X at 980, 355)
+        pogo_driver.adb_tap(980, 355, jitter=2, delay=0.7)
+
+        # 3. Filter pc-{max_cp}, long-press first Pokémon, tap SELECIONAR TUDO, TRANSFERIR, Confirm
+        pogo_driver.adb_shell(
+            f'input tap 500 355; sleep 0.85; input text "pc-{max_cp}"; sleep 0.4; input keyevent 66'
+        )
+        time.sleep(1.0)
+        pogo_driver.adb_shell(
+            "input swipe 195 700 195 700 950; sleep 0.85; "
+            "input tap 810 175; sleep 0.90; "
+            "input tap 540 2310; sleep 1.00; "
+            "input tap 500 1380"
+        )
+        time.sleep(1.8)
+
+        # 4. Close Pokémon storage back to map
+        pogo_driver.adb_tap(980, 355, jitter=2, delay=0.5)
+        pogo_driver.adb_tap(540, 2315, jitter=2, delay=1.15)
+        self.finish_post_catch_to_map()
+        print(f"✅ [PokéBox] Pokémons PC <= {max_cp} transferidos com segurança (Brilhantes/Míticos/Favoritos preservados)!")
         self.resume_walk()
 
     def vision_cycle(self):
