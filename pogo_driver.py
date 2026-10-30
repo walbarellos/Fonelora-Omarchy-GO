@@ -220,10 +220,12 @@ def select_great_or_ultra_ball():
     time.sleep(0.3)
 
 def execute_curveball_throw():
-    """Performs an authentic, sharp human curveball spin & flick.
-    Swirls ball counter-clockwise then releases up-right into the target circle.
+    """Performs an authentic, high-power human curveball spin & flick.
+    Swirls ball counter-clockwise at bottom-center then releases up into the target circle.
     """
-    adb_cmd("shell", "input swipe 540 2150 400 2150 90; input swipe 400 2150 650 1150 130")
+    adb_cmd("shell", "input swipe 540 2200 450 2150 70; input swipe 450 2150 600 950 100")
+
+def spin_and_collect_stop(x: int, y: int) -> bool:
     """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it."""
     # 1. Tap to open stop
     adb_tap(x, y)
