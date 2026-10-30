@@ -155,23 +155,32 @@ def execute_curveball_throw():
     adb_swipe(540, 2150, 540, 1250, 150)
 
 def detect_pokestops(img: np.ndarray):
-    """Detects nearby Pokéstops by blue disk signature, strictly ignoring tall Gym towers."""
+    """Detects nearby Pokéstops by blue or event-orange disk signature, strictly ignoring tall Gym towers."""
     if img is None:
         return []
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    stop_mask = cv2.inRange(hsv, (95, 120, 120), (125, 255, 255))
+    # Standard Blue Pokéstop disk:
+    blue_mask = cv2.inRange(hsv, (95, 120, 100), (125, 255, 255))
+    # Event / Halloween Orange Pokéstop disk:
+    orange_mask = cv2.inRange(hsv, (5, 120, 100), (25, 255, 255))
+    stop_mask = cv2.bitwise_or(blue_mask, orange_mask)
+
     stop_mask[:500, :] = 0
-    stop_mask[1800:, :] = 0
+    stop_mask[2000:, :] = 0
+    # Exclude player avatar
+    cv2.circle(stop_mask, (540, 1600), 120, 0, -1)
+
     contours, _ = cv2.findContours(stop_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     stops = []
     for c in contours:
         area = cv2.contourArea(c)
-        if area > 100:
+        if 80 < area < 25000:
             x, y, w, h = cv2.boundingRect(c)
-            # Filter out Gyms: Gyms have large bounding boxes or very tall vertical height (h > 120)
-            if h > 110 or w > 130:
+            # Filter out Gyms (Gym towers have large width/height or huge tall structures)
+            if h > 130 and w > 140:
                 continue
             stops.append((x + w//2, y + h//2, area))
+    stops.sort(key=lambda s: (s[0]-540)**2 + (s[1]-1600)**2)
     return stops
 
 def feed_berry_in_combat():

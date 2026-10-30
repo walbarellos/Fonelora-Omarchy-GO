@@ -139,27 +139,47 @@ class AutonomousBot:
             print("🍓 [Combat] Alimentando Pokémon com Fruta Frambo (Razz Berry)...")
             pogo_driver.feed_berry_in_combat()
 
-        print(f"⚔️ [Combat] Tela de captura ativa (CP: {cp})! Lançando Pokébola com curva...")
-        pogo_driver.execute_curveball_throw()
-        
-        # Wait for ball wobble and catch result (approx 7-8s)
-        time.sleep(7.0)
-        img_result = pogo_driver.adb_screencap()
-
-        # Check for catch confirmation or dismiss dialogs
-        for _ in range(3):
-            # Tap bottom center to skip XP screen and appraisal dialogs
-            pogo_driver.adb_tap(540, 2300)
-            time.sleep(1.2)
+        # Fast throwing loop: up to 3 throws if Pokemon broke free
+        for throw_attempt in range(1, 4):
+            print(f"⚔️ [Combat] Arremesso {throw_attempt}/3 com curva...")
+            pogo_driver.execute_curveball_throw()
+            
+            # Realistic ball shake/wobble interval (human: ~4.5 to 5.5s)
+            time.sleep(4.8)
             img_chk = pogo_driver.adb_screencap()
+            
+            # If back to map, catch was successful
             if pogo_driver.is_map_screen(img_chk):
+                self.stats["catches"] += 1
+                print(f"🎉 [Hunt] Captura concluída com sucesso! Total capturados: {self.stats['catches']}")
+                self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
+                self.resume_walk()
+                return True
+
+            # Check if catch celebration dialog (POKÉMON PEGO / OK) is showing
+            pogo_driver.adb_tap(540, 2300)
+            time.sleep(0.8)
+            pogo_driver.adb_tap(540, 2300)
+            time.sleep(0.8)
+            img_after = pogo_driver.adb_screencap()
+            if pogo_driver.is_map_screen(img_after):
+                self.stats["catches"] += 1
+                print(f"🎉 [Hunt] Captura concluída! Total capturados: {self.stats['catches']}")
+                self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
+                self.resume_walk()
+                return True
+
+            # If still in encounter screen, prepare next throw immediately without extra delay
+            if not pogo_driver.is_encounter_screen(img_after):
                 break
 
-        self.stats["catches"] += 1
-        print(f"🎉 [Hunt] Captura concluída com sucesso! Total capturados: {self.stats['catches']}")
-        self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
+        # Safety cleanup to return to map
+        for _ in range(2):
+            pogo_driver.adb_tap(540, 2300)
+            time.sleep(0.8)
+
         self.resume_walk()
-        time.sleep(1.0)
+        time.sleep(0.5)
         return True
 
     def handle_pokestop(self, stop_coord) -> bool:
