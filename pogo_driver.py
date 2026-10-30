@@ -359,6 +359,10 @@ def detect_spawns(img: np.ndarray) -> List[Tuple[int, int, int]]:
     for c in cnts:
         a = cv2.contourArea(c)
         if 25 < a < 5000:
+            bx, by, bw, bh = cv2.boundingRect(c)
+            aspect = max(bw, bh) / max(1, min(bw, bh))
+            if aspect > 2.4 or min(bw, bh) < 12:
+                continue  # Skip linear road markings, crosswalks, and sidewalk edges
             (x, y), r = cv2.minEnclosingCircle(c)
             if 15 < r < 95:
                 # Tap center of Pokémon body (slightly above the ground ripple ring)
