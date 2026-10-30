@@ -330,8 +330,11 @@ def detect_spawns(img: np.ndarray) -> List[Tuple[int, int, int]]:
     roi_mask[:, 880:] = 0
     roi_mask[:, :205] = 0  # avoid left-edge out-of-range pokestop rings
 
-    # Map roads, grass, and building roofs all lie in Hue 82..118, Val 45..195
-    terrain = cv2.inRange(hsv, (82, 18, 45), (118, 255, 195))
+    # Night terrain (Hue 82..118) + Daytime grass/roads/sidewalks (Hue 50..92)
+    night_terrain = cv2.inRange(hsv, (82, 18, 45), (118, 255, 195))
+    day_terrain = cv2.inRange(hsv, (50, 18, 80), (88, 130, 242))
+    day_lines = cv2.inRange(hsv, (50, 5, 175), (92, 65, 255))
+    terrain = night_terrain | day_terrain | day_lines
 
     # Pink interaction ring + purple cooldown stops + purple Buddy Gengar
     purple_pink = cv2.inRange(hsv, (120, 35, 40), (174, 255, 255))

@@ -528,5 +528,6 @@ class AutonomousBot:
 
 
 if __name__ == "__main__":
-    bot = AutonomousBot(route_name="tour_centro", walk_speed_kmh=8.5)
+    selected_route = sys.argv[1] if len(sys.argv) > 1 else "shinjuku_tokyo"
+    bot = AutonomousBot(route_name=selected_route, walk_speed_kmh=8.5)
     bot.run()
