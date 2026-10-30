@@ -197,16 +197,15 @@ def feed_berry_in_combat():
 
 def spin_and_collect_stop(x: int, y: int) -> bool:
     """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it."""
-    # Tap to open stop
+    # 1. Tap to open stop
     adb_tap(x, y)
-    time.sleep(0.7)
-    # Fast horizontal swipe across photodisc (1100 Y)
+    time.sleep(0.65)
+    # 2. Fast horizontal swipe across photodisc (1100 Y)
     adb_swipe(200, 1100, 880, 1100, 120)
-    time.sleep(0.35)
-    # Quick tap close 'X' button at bottom
-    adb_tap(540, 2330)
-    time.sleep(0.4)
-    # In case of gym photodisc or popup, safety tap
-    adb_tap(540, 2300)
     time.sleep(0.3)
+    # 3. Double tap close buttons (both 2330 and 2180) to ensure immediate return to map
+    adb_tap(540, 2330)
+    time.sleep(0.2)
+    adb_tap(540, 2180)
+    time.sleep(0.4)
     return True
