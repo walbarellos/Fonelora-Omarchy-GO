@@ -407,23 +407,33 @@ def detect_glowing_boxes(img: np.ndarray) -> List[Tuple[int, int, int]]:
 # Combat & Pokéstop Actions
 # ---------------------------------------------------------------------------
 
-def extract_encounter_cp(img: np.ndarray) -> int:
-    """Fast (~140ms) CP extraction across ground and flying Pokémon heights (Y=200..960)."""
+def extract_encounter_info(img: np.ndarray) -> Tuple[str, int]:
+    """Fast (~150ms) species name + CP extraction across ground and flying Pokémon heights."""
     if img is None:
-        return 0
+        return "", 0
     try:
         import pytesseract
-        roi = img[200:960, 240:840]
+        roi = img[200:960, 200:880]
         small = cv2.resize(roi, (0, 0), fx=0.65, fy=0.65, interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         _, bw = cv2.threshold(gray, 190, 255, cv2.THRESH_BINARY_INV)
         txt = pytesseract.image_to_string(bw, config="--psm 6").strip()
+        cp = 0
         m = re.search(r"(?:PC|CP)\s*([0-9]{2,5})", txt, re.IGNORECASE)
         if m:
-            return int(m.group(1))
+            cp = int(m.group(1))
+        # Extract alphabetic words before PC/CP as species name
+        words = re.findall(r"[A-Za-zÀ-ÿ]{3,}", re.sub(r"(?:PC|CP)\s*[0-9]+", " ", txt, flags=re.I))
+        name = " ".join(words[:2]).strip()
+        return name, cp
     except Exception:
-        pass
-    return 0
+        return "", 0
+
+
+def extract_encounter_cp(img: np.ndarray) -> int:
+    """Fast (~150ms) CP extraction across ground and flying Pokémon heights (Y=200..960)."""
+    _name, cp = extract_encounter_info(img)
+    return cp
 
 
 def run_away_from_encounter():

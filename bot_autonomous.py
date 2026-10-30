@@ -45,10 +45,20 @@ STATE_FILE = BASE / ".bot_state.json"
 PORT = 17878
 
 
+VIP_TARGETS = (
+    "PIKACHU", "RAICHU", "CHARIZARD", "CHARMELEON", "DRAGONITE", "DRAGONAIR",
+    "GYARADOS", "SNORLAX", "TYRANITAR", "METAGROSS", "SLAKING", "GENGAR",
+    "BLISSEY", "CHANSEY", "GARCHOMP", "SALAMENCE", "LAPRAS", "MACHAMP",
+    "ALAKAZAM", "ARCANINE", "RHYDON", "RHYPERIOR", "GARDEVOIR", "LUCARIO",
+    "ZORUA", "SPIRITOMB", "ABSOL", "DRIFBLIM", "MEW", "MEWTWO",
+)
+
+
 class AutonomousBot:
-    def __init__(self, route_name: str = "tour_centro", walk_speed_kmh: float = 8.5):
+    def __init__(self, route_name: str = "tour_centro", walk_speed_kmh: float = 9.5, cooldown_until: float = 0.0):
         self.route_name = route_name
         self.walk_speed_kmh = walk_speed_kmh
+        self.cooldown_until = cooldown_until
         self.running = True
         self.current_lat: Optional[float] = None
         self.current_lon: Optional[float] = None
@@ -118,14 +128,41 @@ class AutonomousBot:
 
     def engage_active_combat(self, initial_img) -> bool:
         """Executes fast human-speed combat when on the encounter screen:
-        - Normal Pokémon (CP < 550): throws Pokéball #1 IMMEDIATELY (~1.5s from HUD appearing)!
-        - Hard Pokémon (CP >= 550) or breakout on attempt 2: feeds Fruta Frambo & selects Great/Ultra Ball.
+        - If teleport cooldown is active (time.time() < self.cooldown_until):
+          Inspects species & CP without throwing (safe from softban!). If VIP species or CP >= 1600,
+          CAMPS on the encounter screen until cooldown expires, then catches with Ultra Ball + Frambo!
+          Otherwise flees immediately to keep scanning Shinjuku!
+        - Normal mode: throws Pokéball #1 in ~0.1s; uses Frambo & Great/Ultra Ball for CP >= 550 or breakouts.
         """
         combat_start = time.time()
         self.pause_walk()
-        cp = pogo_driver.extract_encounter_cp(initial_img)
+        name, cp = pogo_driver.extract_encounter_info(initial_img)
         min_cp_to_catch = self.config.get("hunt", {}).get("cp_flee", 0)
-        print(f"⚔️ [Combat] Batalha aberta! PC: {cp if cp > 0 else 'N/D'}")
+        label = f"{name or 'Pokémon'} (PC: {cp if cp > 0 else 'N/D'})"
+        print(f"⚔️ [Combat] Batalha aberta! {label}")
+
+        # Cooldown Scout & Camp Mode (protects 100% against softban flee!)
+        now = time.time()
+        if now < self.cooldown_until:
+            rem_min = (self.cooldown_until - now) / 60.0
+            upper_name = name.upper()
+            is_vip = cp >= 1600 or any(vip in upper_name for vip in VIP_TARGETS)
+            if not is_vip:
+                print(f"🔍 [Scout Cooldown {rem_min:.0f}m restantes] {label} é comum -> saindo p/ procurar raros/PC alto...")
+                pogo_driver.run_away_from_encounter()
+                self.stats["fled"] += 1
+                self.resume_walk()
+                return False
+
+            print(f"💎 [ALVO RARO / FORTE ENCONTRADO!] {label}! Segurando na tela ('Camping') por {rem_min:.1f} min até zerar o cooldown p/ não fugir!")
+            self.publish_status("camping_vip", f"Segurando {label} até fim do cooldown ({rem_min:.0f}m)")
+            while time.time() < self.cooldown_until and self.running:
+                # Keep screen awake every 45s with harmless tap at top-center sky (540, 120) away from flee/AR buttons
+                time.sleep(min(30.0, max(1.0, self.cooldown_until - time.time())))
+                pogo_driver.adb_cmd("shell", "input keyevent 224")  # KEYCODE_WAKEUP (never touches UI!)
+            print(f"🔥 [Cooldown Zerado!] Capturando {label} agora com Fruta Frambo + Ultra Ball!")
+            cp = max(cp, 1500)  # Force Ultra Ball + Berry for camped VIP!
+            combat_start = time.time()
 
         if 0 < cp < min_cp_to_catch:
             print(f"⏩ [Hunt] CP abaixo do filtro ({cp} < {min_cp_to_catch}). Fugindo...")
@@ -380,24 +417,27 @@ class AutonomousBot:
 
         # Prune expired cooldown entries
         self.spun_stops_history = {k: t for k, t in self.spun_stops_history.items() if now - t < 300}
-        self.tapped_spawns_history = {k: t for k, t in self.tapped_spawns_history.items() if now - t < 45}
+        self.tapped_spawns_history = {k: t for k, t in self.tapped_spawns_history.items() if now - t < 65}
 
-        # Priority 0: Available Orange/Blue Pokéstops within interaction ring (~360px of avatar 505, 1585)
-        stops = pogo_driver.detect_pokestops(img)
-        interactive_stops = [
-            s for s in stops if (s[0] - 505) ** 2 + (s[1] - 1585) ** 2 < 360 ** 2
-        ]
-        fresh_stops = [
-            s for s in interactive_stops
-            if not any(abs(s[0] - hx) < 90 and abs(s[1] - hy) < 90 for (hx, hy) in self.spun_stops_history)
-        ]
-        if fresh_stops:
-            best_stop = fresh_stops[0]
-            self.spun_stops_history[(best_stop[0], best_stop[1])] = now
-            self.handle_pokestop((best_stop[0], best_stop[1]))
-            return
+        in_teleport_cooldown = now < self.cooldown_until
 
-        # Priority 1: Wild Pokémon Spawns (filtered by 45s tap memory so non-spawns are never re-tapped)
+        # Priority 0: Available Orange/Blue Pokéstops (only spin once teleport cooldown is over!)
+        if not in_teleport_cooldown:
+            stops = pogo_driver.detect_pokestops(img)
+            interactive_stops = [
+                s for s in stops if (s[0] - 505) ** 2 + (s[1] - 1585) ** 2 < 360 ** 2
+            ]
+            fresh_stops = [
+                s for s in interactive_stops
+                if not any(abs(s[0] - hx) < 90 and abs(s[1] - hy) < 90 for (hx, hy) in self.spun_stops_history)
+            ]
+            if fresh_stops:
+                best_stop = fresh_stops[0]
+                self.spun_stops_history[(best_stop[0], best_stop[1])] = now
+                self.handle_pokestop((best_stop[0], best_stop[1]))
+                return
+
+        # Priority 1: Wild Pokémon Spawns (active both in Scout Mode and Full Catch Mode!)
         spawns = pogo_driver.detect_spawns(img)
         fresh_spawns = [
             s for s in spawns
@@ -409,18 +449,19 @@ class AutonomousBot:
             self.handle_encounter((best_spawn[0], best_spawn[1]))
             return
 
-        # Priority 2: Glowing Map Boxes
-        boxes = pogo_driver.detect_glowing_boxes(img)
-        fresh_boxes = [
-            b for b in boxes
-            if not any(abs(b[0] - hx) < 70 and abs(b[1] - hy) < 70 for (hx, hy) in self.tapped_spawns_history)
-        ]
-        if fresh_boxes:
-            box = fresh_boxes[0]
-            self.tapped_spawns_history[(box[0], box[1])] = now
-            print(f"🎁 [Caixa] Coletando caixa brilhante no mapa em ({box[0]}, {box[1]})...")
-            pogo_driver.adb_tap(box[0], box[1], jitter=3, delay=0.6)
-            return
+        # Priority 2: Glowing Map Boxes (only collect once teleport cooldown is over)
+        if not in_teleport_cooldown:
+            boxes = pogo_driver.detect_glowing_boxes(img)
+            fresh_boxes = [
+                b for b in boxes
+                if not any(abs(b[0] - hx) < 70 and abs(b[1] - hy) < 70 for (hx, hy) in self.tapped_spawns_history)
+            ]
+            if fresh_boxes:
+                box = fresh_boxes[0]
+                self.tapped_spawns_history[(box[0], box[1])] = now
+                print(f"🎁 [Caixa] Coletando caixa brilhante no mapa em ({box[0]}, {box[1]})...")
+                pogo_driver.adb_tap(box[0], box[1], jitter=3, delay=0.6)
+                return
 
     def gps_walk_worker(self):
         """Worker thread executing organic GPS route movement."""
@@ -529,5 +570,7 @@ class AutonomousBot:
 
 if __name__ == "__main__":
     selected_route = sys.argv[1] if len(sys.argv) > 1 else "shinjuku_tokyo"
-    bot = AutonomousBot(route_name=selected_route, walk_speed_kmh=8.5)
+    cd_mins = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
+    cd_until = (time.time() + cd_mins * 60.0) if cd_mins > 0 else 0.0
+    bot = AutonomousBot(route_name=selected_route, walk_speed_kmh=9.5, cooldown_until=cd_until)
     bot.run()
