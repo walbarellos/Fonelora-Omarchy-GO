@@ -38,9 +38,23 @@ def adb_screencap() -> np.ndarray:
     arr = np.frombuffer(proc.stdout, dtype=np.uint8)
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
-def dismiss_popups():
-    """Dismiss common popups, level ups, safety warnings or banners."""
-    # Bottom dismiss button or OK buttons
+def is_main_menu_open(img: np.ndarray) -> bool:
+    """Detects if the main Pokéball options menu (Pokédex, Batalhar, Loja, Pokémon) is open."""
+    if img is None:
+        return False
+    # Check if close 'X' button is present at (540, 2300) with bright/white icon
+    # and background is blurred/overlayed
+    b, g, r = img[2300, 540]
+    return (int(b) + int(g) + int(r)) > 600
+
+def dismiss_popups(img: np.ndarray = None):
+    """Dismiss common popups, open menus, dialogs, or banners to return to map."""
+    if img is not None and is_main_menu_open(img):
+        # Close main menu by tapping bottom X button
+        adb_tap(540, 2300)
+        time.sleep(1.0)
+        return
+    # Default bottom dismiss tap for level up, news, popups
     adb_tap(540, 2330)
     time.sleep(0.5)
 

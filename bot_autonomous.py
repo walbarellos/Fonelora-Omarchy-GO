@@ -201,8 +201,8 @@ class AutonomousBot:
             return
 
         if not pogo_driver.is_map_screen(img):
-            # Check for dismissal popups (level up, daily streak, notifications)
-            pogo_driver.dismiss_popups()
+            # Check for dismissal popups (level up, daily streak, notifications, open menus)
+            pogo_driver.dismiss_popups(img)
             return
 
         # Priority 1: Check for Spawns
