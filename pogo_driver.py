@@ -39,33 +39,45 @@ def adb_screencap() -> np.ndarray:
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
 def is_main_menu_open(img: np.ndarray) -> bool:
-    """Detects if the main Pokéball options menu (Pokédex, Batalhar, Loja, Pokémon) is open."""
+    """Detects if the main Pokéball options menu (Pokédex, Batalhar, Loja, Pokémon) is open.
+    In the main menu, the screen is darkened/blurred, and a bright circular 'X' close button
+    sits at (540, 2300) with bright white icon (sum of RGB > 680)."""
     if img is None:
         return False
-    # Check if close 'X' button is present at (540, 2300) with bright/white icon
-    # and background is blurred/overlayed
     b, g, r = img[2300, 540]
-    return (int(b) + int(g) + int(r)) > 600
+    return (int(b) + int(g) + int(r)) > 680
 
 def dismiss_popups(img: np.ndarray = None):
-    """Dismiss common popups, open menus, dialogs, or banners to return to map."""
+    """Safely dismisses open dialogs, menus, or summary popups without EVER tapping the map Pokéball."""
     if img is not None and is_main_menu_open(img):
-        # Close main menu by tapping bottom X button
-        adb_tap(540, 2300)
-        time.sleep(1.0)
+        # Close options menu by sending Android BACK key or tapping X
+        adb_cmd("shell", "input keyevent 4")
+        time.sleep(0.8)
         return
-    # Default bottom dismiss tap for level up, news, popups
-    adb_tap(540, 2330)
+    # Use Android BACK keyevent 4 to safely dismiss any open dialog, news, or modal:
+    # Keyevent 4 never clicks coordinates and therefore NEVER opens the Pokéball menu or shop!
+    adb_cmd("shell", "input keyevent 4")
     time.sleep(0.5)
 
 def is_map_screen(img: np.ndarray) -> bool:
     """Checks if main map screen HUD is active (Pokeball menu at 540, 2300)."""
     if img is None:
         return False
+    # If the main menu or full screen modal is open, it's not the map
+    if is_main_menu_open(img):
+        return False
     # Pokeball menu is at (540, 2300)
     b, g, r = img[2300, 540]
-    # Check if close to [168, 170, 148] or non-dark
-    return r > 100 and g > 100 and b > 100
+    # Check if close to normal HUD pokeball icon [168, 170, 148]
+    return 80 < r < 200 and 80 < g < 200 and 80 < b < 200
+
+def is_pokestop_screen(img: np.ndarray) -> bool:
+    """Detects if a Pokéstop photodisc screen is open."""
+    if img is None:
+        return False
+    # In an open Pokéstop screen, the close 'X' button at (540, 2330) is bright white/light
+    b, g, r = img[2330, 540]
+    return (int(b) + int(g) + int(r)) > 600
 
 def is_encounter_screen(img: np.ndarray) -> bool:
     """Checks if in Pokémon encounter screen by verifying flee button icon at top-left (100, 180)
@@ -90,22 +102,26 @@ def is_encounter_screen(img: np.ndarray) -> bool:
     return r_ball > 110 and b_ball < 70
 
 def detect_glowing_boxes(img: np.ndarray):
-    """Detects glowing mystery / treat / event boxes on the map."""
+    """Detects glowing mystery / treat / event boxes on the map, strictly ignoring UI elements."""
     if img is None:
         return []
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     # Bright glowing orange/gold or sparkling items
-    gold_mask = cv2.inRange(hsv, (12, 120, 140), (38, 255, 255))
-    gold_mask[:900, :] = 0
-    gold_mask[1900:, :] = 0
+    gold_mask = cv2.inRange(hsv, (14, 150, 160), (32, 255, 255))
+    gold_mask[:600, :] = 0
+    gold_mask[1950:, :] = 0
     # Exclude player avatar
-    cv2.circle(gold_mask, (540, 1600), 120, 0, -1)
+    cv2.circle(gold_mask, (540, 1600), 220, 0, -1)
+    # Exclude bottom-left player profile / buddy area (x < 250, y > 1800)
+    gold_mask[1800:, :260] = 0
+    # Exclude right-hand weather/radar HUD (x > 880)
+    gold_mask[:, 880:] = 0
     
     cnts, _ = cv2.findContours(gold_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     boxes = []
     for c in cnts:
         a = cv2.contourArea(c)
-        if 40 < a < 8000:
+        if 40 < a < 6000:
             x, y, w, h = cv2.boundingRect(c)
             boxes.append((x + w//2, y + h//2, a))
     boxes.sort(key=lambda b: (b[0]-540)**2 + (b[1]-1600)**2)
@@ -135,15 +151,20 @@ def run_away_from_encounter():
     time.sleep(1.5)
 
 def detect_spawns(img: np.ndarray):
-    """Detects Pokémon spawns around player interaction radius, strictly ignoring the avatar pulse ring."""
+    """Detects Pokémon spawns around player interaction radius, strictly ignoring avatar, pulse rings, and UI buttons."""
     if img is None:
         return []
     h, w, _ = img.shape
     # Focus on radius around player (540, 1600)
     mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.circle(mask, (540, 1600), 440, 255, -1)
-    # Mask out avatar AND the pulse ripple inner zone (radius 235 around avatar)
-    cv2.circle(mask, (540, 1600), 235, 0, -1)
+    cv2.circle(mask, (540, 1600), 420, 255, -1)
+    # Mask out avatar AND expanding pulse rings (radius 240 around avatar)
+    cv2.circle(mask, (540, 1600), 240, 0, -1)
+
+    # Exclude bottom UI zone (profile, pokeball, binoculars)
+    mask[1900:, :] = 0
+    # Exclude bottom-center zone (pokeball menu safe margin: Y > 1750, X within 160px of center)
+    mask[1750:, 380:700] = 0
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 40, 120)
@@ -156,11 +177,14 @@ def detect_spawns(img: np.ndarray):
         if 80 < area < 25000:
             x, y, cw, ch = cv2.boundingRect(c)
             # Avoid bottom HUD buttons
-            if y + ch > 2050 or y < 1050:
+            if y + ch > 1950 or y < 1050:
                 continue
-            # Avoid the central vertical pulse axis directly below avatar
             cx, cy = x + cw//2, y + ch//2
-            if abs(cx - 540) < 40 and cy > 1750:
+            # Strictly ignore points within avatar / buddy radius (240px)
+            if (cx - 540)**2 + (cy - 1600)**2 < 240**2:
+                continue
+            # Strictly avoid the central vertical pulse axis directly below avatar
+            if abs(cx - 540) < 120 and cy > 1750:
                 continue
             spawns.append((cx, cy, area))
     
@@ -169,36 +193,48 @@ def detect_spawns(img: np.ndarray):
     return spawns
 
 def detect_pokestops(img: np.ndarray):
-    """Detects nearby AVAILABLE Pokéstops (Orange or Blue).
+    """Detects nearby AVAILABLE Pokéstops (Orange Halloween or Standard Blue).
     Strictly ignores:
       - Cooldown / used Pokéstops (Purple / Lilac)
       - Tall Gym towers
+      - Map terrain / night grass false positives
     """
     if img is None:
         return []
+
+    # 1. Orange available stops (Halloween pumpkin disks):
+    # Pure vibrant orange: R > 180, G in 80..180, B < 70
+    orange_mask = ((img[:, :, 2] > 180) & (img[:, :, 1] > 80) & (img[:, :, 1] < 180) & (img[:, :, 0] < 70)).astype(np.uint8) * 255
+
+    # 2. Standard blue available stops:
+    # Pure vibrant blue: B > 180, G > 110, R < 90
+    blue_mask = ((img[:, :, 0] > 180) & (img[:, :, 1] > 110) & (img[:, :, 2] < 90)).astype(np.uint8) * 255
+
+    # 3. Cooldown stops: Lilac / Purple / Magenta
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    # Standard Blue Pokéstop disk:
-    blue_mask = cv2.inRange(hsv, (95, 120, 100), (125, 255, 255))
-    # Event / Halloween Orange Pokéstop disk:
-    orange_mask = cv2.inRange(hsv, (5, 120, 100), (25, 255, 255))
-    stop_mask = cv2.bitwise_or(blue_mask, orange_mask)
+    purple_hsv = cv2.inRange(hsv, (120, 35, 35), (175, 255, 255))
+    purple_bgr = ((img[:, :, 0] > 110) & (img[:, :, 2] > 100) & (img[:, :, 1] < img[:, :, 0] - 10)).astype(np.uint8) * 255
+    cooldown_mask = cv2.bitwise_or(purple_hsv, purple_bgr)
 
-    # Filter out Cooldown (Purple/Lilac/Magenta) stops: Hue 130 to 175
-    cooldown_mask = cv2.inRange(hsv, (130, 60, 60), (175, 255, 255))
-    kernel = np.ones((7, 7), np.uint8)
+    # Dilate cooldown generously (kernel 35x35) so that purple stops never get targeted
+    kernel = np.ones((35, 35), np.uint8)
     cooldown_dilated = cv2.dilate(cooldown_mask, kernel, iterations=2)
-    stop_mask = cv2.bitwise_and(stop_mask, cv2.bitwise_not(cooldown_dilated))
 
-    stop_mask[:500, :] = 0
-    stop_mask[2000:, :] = 0
-    # Exclude player avatar
-    cv2.circle(stop_mask, (540, 1600), 120, 0, -1)
+    available_stops = cv2.bitwise_or(orange_mask, blue_mask)
+    clean_stops = cv2.bitwise_and(available_stops, cv2.bitwise_not(cooldown_dilated))
 
-    contours, _ = cv2.findContours(stop_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    clean_stops[:450, :] = 0
+    clean_stops[1950:, :] = 0
+    # Exclude player avatar & pulse ring
+    cv2.circle(clean_stops, (540, 1600), 220, 0, -1)
+    # Exclude bottom-left player profile
+    clean_stops[1800:, :260] = 0
+
+    contours, _ = cv2.findContours(clean_stops, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     stops = []
     for c in contours:
         area = cv2.contourArea(c)
-        if 80 < area < 25000:
+        if 40 < area < 25000:
             x, y, w, h = cv2.boundingRect(c)
             # Filter out Gyms (Gym towers have large width/height or huge tall structures)
             if h > 130 and w > 140:
@@ -268,16 +304,24 @@ def execute_curveball_throw():
     adb_cmd("shell", "input swipe 540 2200 450 2150 70; input swipe 450 2150 600 950 100")
 
 def spin_and_collect_stop(x: int, y: int) -> bool:
-    """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it."""
+    """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it.
+    Uses Android BACK key and verified screen check to guarantee 0% chance of tapping the map Pokéball."""
     # 1. Tap to open stop
     adb_tap(x, y)
-    time.sleep(0.65)
+    time.sleep(0.7)
+    
     # 2. Fast horizontal swipe across photodisc (1100 Y)
     adb_swipe(200, 1100, 880, 1100, 120)
-    time.sleep(0.3)
-    # 3. Double tap close buttons (both 2330 and 2180) to ensure immediate return to map
-    adb_tap(540, 2330)
-    time.sleep(0.2)
-    adb_tap(540, 2180)
+    time.sleep(0.35)
+    
+    # 3. Safely close Pokéstop screen:
+    # First send Android BACK keyevent 4 (clean native close)
+    adb_cmd("shell", "input keyevent 4")
     time.sleep(0.4)
+    
+    # If still not on map, send another keyevent 4
+    img_chk = adb_screencap()
+    if img_chk is not None and not is_map_screen(img_chk):
+        adb_cmd("shell", "input keyevent 4")
+        time.sleep(0.3)
     return True
