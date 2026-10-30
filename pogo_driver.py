@@ -150,8 +150,12 @@ def detect_spawns(img: np.ndarray):
     spawns.sort(key=lambda s: (s[0]-540)**2 + (s[1]-1600)**2)
     return spawns
 
+def execute_curveball_throw():
+    """Performs an authentic curveball flick to capture Pokémon."""
+    adb_swipe(540, 2150, 540, 1250, 150)
+
 def detect_pokestops(img: np.ndarray):
-    """Detects nearby Pokéstops by blue disk signature."""
+    """Detects nearby Pokéstops by blue disk signature, strictly ignoring tall Gym towers."""
     if img is None:
         return []
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -164,13 +168,23 @@ def detect_pokestops(img: np.ndarray):
         area = cv2.contourArea(c)
         if area > 100:
             x, y, w, h = cv2.boundingRect(c)
+            # Filter out Gyms: Gyms have large bounding boxes or very tall vertical height (h > 120)
+            if h > 110 or w > 130:
+                continue
             stops.append((x + w//2, y + h//2, area))
     return stops
 
-def execute_curveball_throw():
-    """Performs an authentic curveball flick to capture Pokémon."""
-    # Curve motion: start slightly left, spin, flick up to center
-    adb_swipe(540, 2150, 540, 1250, 150)
+def feed_berry_in_combat():
+    """Feeds a Razz Berry (or current available berry) to the Pokémon before throwing."""
+    # 1. Tap bottom-left Berry icon at (135, 2235)
+    adb_tap(135, 2235)
+    time.sleep(0.8)
+    # 2. Tap the first berry in drawer (left slot at ~280, 2050)
+    adb_tap(280, 2050)
+    time.sleep(0.4)
+    # 3. Flick/swipe berry toward Pokémon center (540, 2050 -> 540, 1400)
+    adb_swipe(540, 2050, 540, 1400, 180)
+    time.sleep(1.2)
 
 def spin_and_collect_stop(x: int, y: int) -> bool:
     """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it."""

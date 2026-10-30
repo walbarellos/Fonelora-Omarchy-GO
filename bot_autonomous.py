@@ -133,6 +133,12 @@ class AutonomousBot:
             self.resume_walk()
             return False
 
+        # Feed berry if CP is medium/high or configured to increase catch rate
+        use_berry = self.config.get("hunt", {}).get("use_razz_if_cp_above", True)
+        if use_berry and cp > 350:
+            print("🍓 [Combat] Alimentando Pokémon com Fruta Frambo (Razz Berry)...")
+            pogo_driver.feed_berry_in_combat()
+
         print(f"⚔️ [Combat] Tela de captura ativa (CP: {cp})! Lançando Pokébola com curva...")
         pogo_driver.execute_curveball_throw()
         
