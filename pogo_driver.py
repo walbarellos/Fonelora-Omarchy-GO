@@ -202,31 +202,35 @@ def detect_pokestops(img: np.ndarray):
     if img is None:
         return []
 
-    # 1. Orange available stops (Halloween pumpkin disks):
-    # Pure vibrant orange: R > 180, G in 80..180, B < 70
-    orange_mask = ((img[:, :, 2] > 180) & (img[:, :, 1] > 80) & (img[:, :, 1] < 180) & (img[:, :, 0] < 70)).astype(np.uint8) * 255
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    # 2. Standard blue available stops:
-    # Pure vibrant blue: B > 180, G > 110, R < 90
-    blue_mask = ((img[:, :, 0] > 180) & (img[:, :, 1] > 110) & (img[:, :, 2] < 90)).astype(np.uint8) * 255
+    # 1. Standard Blue available stops:
+    # In HSV: Hue 95 to 118, Saturation 70 to 255, Value 110 to 255
+    blue_mask = cv2.inRange(hsv, (95, 70, 110), (118, 255, 255))
+
+    # 2. Event / Halloween Orange available stops:
+    # In HSV: Hue 8 to 22, Saturation 110 to 255, Value 110 to 255
+    orange_mask = cv2.inRange(hsv, (8, 110, 110), (22, 255, 255))
+
+    stops_raw = cv2.bitwise_or(blue_mask, orange_mask)
 
     # 3. Cooldown stops: Lilac / Purple / Magenta
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    purple_hsv = cv2.inRange(hsv, (120, 35, 35), (175, 255, 255))
-    purple_bgr = ((img[:, :, 0] > 110) & (img[:, :, 2] > 100) & (img[:, :, 1] < img[:, :, 0] - 10)).astype(np.uint8) * 255
+    # In HSV: Hue 125 to 172, Saturation 35 to 255, Value 55 to 255
+    purple_hsv = cv2.inRange(hsv, (125, 35, 55), (172, 255, 255))
+    # In BGR: high blue & red, noticeably lower green
+    purple_bgr = ((img[:, :, 0] > 115) & (img[:, :, 2] > 105) & (img[:, :, 1] < img[:, :, 0] - 12)).astype(np.uint8) * 255
     cooldown_mask = cv2.bitwise_or(purple_hsv, purple_bgr)
 
-    # Dilate cooldown generously (kernel 35x35) so that purple stops never get targeted
-    kernel = np.ones((35, 35), np.uint8)
+    # Dilate cooldown (25x25) so that purple cooldown stops never get touched
+    kernel = np.ones((25, 25), np.uint8)
     cooldown_dilated = cv2.dilate(cooldown_mask, kernel, iterations=2)
 
-    available_stops = cv2.bitwise_or(orange_mask, blue_mask)
-    clean_stops = cv2.bitwise_and(available_stops, cv2.bitwise_not(cooldown_dilated))
+    clean_stops = cv2.bitwise_and(stops_raw, cv2.bitwise_not(cooldown_dilated))
 
     clean_stops[:450, :] = 0
     clean_stops[1950:, :] = 0
     # Exclude player avatar & pulse ring
-    cv2.circle(clean_stops, (540, 1600), 220, 0, -1)
+    cv2.circle(clean_stops, (540, 1600), 200, 0, -1)
     # Exclude bottom-left player profile
     clean_stops[1800:, :260] = 0
 
@@ -234,7 +238,7 @@ def detect_pokestops(img: np.ndarray):
     stops = []
     for c in contours:
         area = cv2.contourArea(c)
-        if 40 < area < 25000:
+        if 50 < area < 25000:
             x, y, w, h = cv2.boundingRect(c)
             # Filter out Gyms (Gym towers have large width/height or huge tall structures)
             if h > 130 and w > 140:

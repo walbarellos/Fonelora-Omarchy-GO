@@ -58,6 +58,7 @@ class AutonomousBot:
         self.current_lon: Optional[float] = None
         self.load_config()
         self.load_route()
+        self.spun_stops_history = {} # (approx_x, approx_y): timestamp
         self.stats = {
             "catches": 0,
             "spins": 0,
@@ -244,27 +245,41 @@ class AutonomousBot:
         # Priority 0: Check for Pokéstops (Restocking when in interaction range)
         stops = pogo_driver.detect_pokestops(img)
         # Filter stops strictly in close interaction range (distance < 450px)
-        interactive_stops = [s for s in stops if (s[0]-540)**2 + (s[1]-1600)**2 < 420**2]
-        if interactive_stops:
-            best_stop = interactive_stops[0]
+        interactive_stops = [s for s in stops if (s[0]-540)**2 + (s[1]-1600)**2 < 440**2]
+        
+        # Filter out stops spun in the last 5 minutes (cooldown tracking)
+        now = time.time()
+        fresh_stops = []
+        for s in interactive_stops:
+            sx, sy = s[0], s[1]
+            recently_spun = any(
+                abs(sx - hx) < 80 and abs(sy - hy) < 80 and (now - t) < 300
+                for (hx, hy), t in self.spun_stops_history.items()
+            )
+            if not recently_spun:
+                fresh_stops.append(s)
+
+        if fresh_stops:
+            best_stop = fresh_stops[0]
+            self.spun_stops_history[(best_stop[0], best_stop[1])] = now
             self.handle_pokestop((best_stop[0], best_stop[1]))
             return
 
-        # Priority 1: Check for Glowing Boxes (Treat / Mystery / Candy boxes)
-        boxes = pogo_driver.detect_glowing_boxes(img)
-        if boxes:
-            box = boxes[0]
-            print(f"🎁 [Caixa] Coletando caixa brilhante em ({box[0]}, {box[1]})...")
-            pogo_driver.adb_tap(box[0], box[1])
-            time.sleep(1.2)
-            return
-
-        # Priority 2: Check for Spawns
+        # Priority 1: Check for Spawns
         spawns = pogo_driver.detect_spawns(img)
         if spawns:
             # Engage closest spawn
             best_spawn = spawns[0]
             self.handle_encounter((best_spawn[0], best_spawn[1]))
+            return
+
+        # Priority 2: Check for Glowing Boxes (Treat / Mystery / Candy boxes)
+        boxes = pogo_driver.detect_glowing_boxes(img)
+        if boxes:
+            box = boxes[0]
+            print(f"🎁 [Caixa] Coletando caixa brilhante em ({box[0]}, {box[1]})...")
+            pogo_driver.adb_tap(box[0], box[1])
+            time.sleep(0.8)
             return
 
     def gps_walk_worker(self):
