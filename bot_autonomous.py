@@ -127,108 +127,48 @@ class AutonomousBot:
         return bool(img_final is not None and pogo_driver.is_map_screen(img_final))
 
     def engage_active_combat(self, initial_img) -> bool:
-        """Executes fast human-speed combat when on the encounter screen:
-        - If teleport cooldown is active (time.time() < self.cooldown_until):
-          Inspects species & CP without throwing (safe from softban!). If VIP species or CP >= 1600,
-          CAMPS on the encounter screen until cooldown expires, then catches with Ultra Ball + Frambo!
-          Otherwise flees immediately to keep scanning Shinjuku!
-        - Normal mode: throws Pokéball #1 in ~0.1s; uses Frambo & Great/Ultra Ball for CP >= 550 or breakouts.
+        """Executes instant human-speed combat (<1s reaction time):
+        - Throws Pokéball immediately without delays.
+        - Immediate re-throw on escape.
         """
-        combat_start = time.time()
         self.pause_walk()
         name, cp = pogo_driver.extract_encounter_info(initial_img)
         min_cp_to_catch = self.config.get("hunt", {}).get("cp_flee", 0)
         label = f"{name or 'Pokémon'} (PC: {cp if cp > 0 else 'N/D'})"
         print(f"⚔️ [Combat] Batalha aberta! {label}")
 
-        # Cooldown Scout & Camp Mode (protects 100% against softban flee!)
-        now = time.time()
-        upper_name = name.upper()
-        ignore_list = [sp.upper() for sp in self.config.get("hunt", {}).get("ignore_species", [])]
-        ignore_cp_thresh = self.config.get("hunt", {}).get("ignore_if_cp_below", 1200)
-
-        # 1. Species Ignore Filter: if species is in trash list AND CP < 1200, flee immediately!
-        is_trash_species = any(trash in upper_name for trash in ignore_list)
-        if is_trash_species and (cp < ignore_cp_thresh):
-            print(f"🚫 [Ignore Filter] {label} está na lista de ignorados (PC < {ignore_cp_thresh}) -> fugindo imediatamente!")
-            pogo_driver.run_away_from_encounter()
-            self.stats["fled"] += 1
-            self.resume_walk()
-            return False
-
-        if now < self.cooldown_until:
-            rem_min = (self.cooldown_until - now) / 60.0
-            is_vip = cp >= 1600 or any(vip in upper_name for vip in VIP_TARGETS)
-            if not is_vip:
-                print(f"🔍 [Scout Cooldown {rem_min:.0f}m restantes] {label} é comum -> saindo p/ procurar raros/PC alto...")
-                pogo_driver.run_away_from_encounter()
-                self.stats["fled"] += 1
-                self.resume_walk()
-                return False
-
-            print(f"💎 [ALVO RARO / FORTE ENCONTRADO!] {label}! Segurando na tela ('Camping') por {rem_min:.1f} min até zerar o cooldown p/ não fugir!")
-            self.publish_status("camping_vip", f"Segurando {label} até fim do cooldown ({rem_min:.0f}m)")
-            while time.time() < self.cooldown_until and self.running:
-                time.sleep(min(30.0, max(1.0, self.cooldown_until - time.time())))
-                pogo_driver.adb_cmd("shell", "input keyevent 224")  # KEYCODE_WAKEUP
-            print(f"🔥 [Cooldown Zerado!] Capturando {label} agora com Fruta Frambo + Ultra Ball!")
-            cp = max(cp, 1500)
-            combat_start = time.time()
-
-        if 0 < cp < min_cp_to_catch:
-            print(f"⏩ [Hunt] CP abaixo do filtro ({cp} < {min_cp_to_catch}). Fugindo...")
-            pogo_driver.run_away_from_encounter()
-            self.stats["fled"] += 1
-            self.resume_walk()
-            return False
-
-        # Smart Ball Selection by CP (<550 Pokébola sem abrir menu, 550-1199 Great, >=1200 Ultra)
-        pogo_driver.select_ball_by_cp(cp)
-
-        # Only feed Fruta Frambo BEFORE Throw #1 if Pokémon is difficult (CP >= 550)!
-        berry_fed = False
+        # Smart Ball & Berry Selection (fast, non-blocking)
         if cp >= 550:
-            print(f"🍓 [Combat] Pokémon difícil (PC {cp}) -> dando Fruta Frambo antes do arremesso...")
+            pogo_driver.select_ball_by_cp(cp)
+            print("🍓 [Combat] Pokémon forte -> Fruta Frambo...")
             pogo_driver.feed_berry_in_combat()
-            berry_fed = True
 
-        # Continuous single-swipe throw loop (up to 4 attempts)
+        # Multi-throw loop: Immediate throws without multi-second dead waits
         for attempt in range(1, 5):
-            # If Pokémon broke out of Throw #1 and we haven't fed a berry yet, feed Fruta Frambo on Attempt #2!
-            if attempt == 2 and not berry_fed:
-                print("🍓 [Combat] Escapou da 1ª bola -> dando Fruta Frambo para garantir captura...")
-                pogo_driver.feed_berry_in_combat()
-                berry_fed = True
-
-            t0 = time.time()
-            since_start = t0 - combat_start
-            print(f"🎯 [Combat] Arremesso {attempt}/4 (t+{since_start:.1f}s após abrir combate)...")
+            print(f"🎯 [Combat] Arremesso {attempt}/4 instantâneo...")
             pogo_driver.execute_curveball_throw(attempt=attempt)
 
-            # Wait ~3.2s for flight + ball shakes, then poll fast screencap
-            time.sleep(3.2)
-            for _poll in range(5):
+            # Wait exactly 2.5s for ball shake/settle
+            time.sleep(2.5)
+
+            # Quick verification
+            for _ in range(4):
                 img_chk = pogo_driver.adb_screencap()
                 if img_chk is None:
                     continue
 
                 if pogo_driver.is_map_screen(img_chk):
-                    print("🗺️ [Combat] Retornou ao mapa (Pokémon fugiu ou encontro encerrado).")
+                    print("🗺️ [Combat] Retornou ao mapa.")
                     self.resume_walk()
-                    return False
-
-                # Safety: if an item drawer accidentally opened, close it immediately and re-throw
-                if pogo_driver.is_item_drawer_open(img_chk):
-                    pogo_driver.dismiss_popups(img_chk)
-                    break
+                    return True
 
                 if pogo_driver.is_encounter_screen(img_chk):
-                    elapsed = time.time() - t0
-                    print(f"⚡ [Combat] Bola não prendeu / escapou ({elapsed:.1f}s). Novo arremesso imediato!")
-                    break  # Immediately loops to next attempt!
+                    print("⚡ [Combat] Escapou da bola! Re-arremessando em 0.5s...")
+                    time.sleep(0.5)
+                    break
 
                 if pogo_driver.has_catch_ok_button(img_chk) or pogo_driver.has_close_or_check_button(img_chk):
-                    print("🎉 [Hunt] POKÉMON CAPTURADO! Fechando OK + Resumo (✓) instantaneamente...")
+                    print("🎉 [Hunt] POKÉMON CAPTURADO! Fechando telas em <1s...")
                     pogo_driver.dismiss_popups(img_chk)
                     self.finish_post_catch_to_map()
                     self.stats["catches"] += 1
@@ -237,15 +177,9 @@ class AutonomousBot:
                     self.resume_walk()
                     return True
 
-                time.sleep(0.9)
+                time.sleep(0.6)
 
-        img_end = pogo_driver.adb_screencap()
-        if img_end is not None and pogo_driver.is_encounter_screen(img_end):
-            print("⏩ [Combat] Limite de 4 arremessos atingido; saindo do encontro para manter fluxo.")
-            pogo_driver.run_away_from_encounter()
-        else:
-            self.finish_post_catch_to_map()
-
+        self.finish_post_catch_to_map()
         self.resume_walk()
         return False
 
