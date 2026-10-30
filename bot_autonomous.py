@@ -156,27 +156,22 @@ class AutonomousBot:
                 self.resume_walk()
                 return True
 
-            # Check if catch celebration dialog (POKÉMON PEGO / OK) is showing
-            pogo_driver.adb_tap(540, 2300)
-            time.sleep(0.8)
-            pogo_driver.adb_tap(540, 2300)
-            time.sleep(0.8)
-            img_after = pogo_driver.adb_screencap()
-            if pogo_driver.is_map_screen(img_after):
-                self.stats["catches"] += 1
-                print(f"🎉 [Hunt] Captura concluída! Total capturados: {self.stats['catches']}")
-                self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
-                self.resume_walk()
-                return True
-
-            # If still in encounter screen, prepare next throw immediately without extra delay
-            if not pogo_driver.is_encounter_screen(img_after):
+            # If not map, tap screen center to advance past XP animation, then tap bottom checkmark (540, 2330)
+            if not pogo_driver.is_encounter_screen(img_chk):
+                # Tap center to dismiss XP popup
+                pogo_driver.adb_tap(540, 1500)
+                time.sleep(0.7)
+                # Tap bottom checkmark to close summary screen
+                pogo_driver.adb_tap(540, 2330)
+                time.sleep(0.8)
+                img_after = pogo_driver.adb_screencap()
+                if pogo_driver.is_map_screen(img_after):
+                    self.stats["catches"] += 1
+                    print(f"🎉 [Hunt] Captura concluída! Total capturados: {self.stats['catches']}")
+                    self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
+                    self.resume_walk()
+                    return True
                 break
-
-        # Safety cleanup to return to map
-        for _ in range(2):
-            pogo_driver.adb_tap(540, 2300)
-            time.sleep(0.8)
 
         self.resume_walk()
         time.sleep(0.5)
