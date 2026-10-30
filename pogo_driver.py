@@ -199,18 +199,31 @@ def detect_pokestops(img: np.ndarray):
     return stops
 
 def feed_berry_in_combat():
-    """Feeds a Razz Berry (or current available berry) to the Pokémon before throwing."""
-    # 1. Tap bottom-left Berry icon at (135, 2235)
+    """Feeds a Razz Berry instantly to the Pokémon."""
+    # 1. Tap bottom-left Berry icon
     adb_tap(135, 2235)
-    time.sleep(0.8)
-    # 2. Tap the first berry in drawer (left slot at ~280, 2050)
-    adb_tap(280, 2050)
-    time.sleep(0.4)
-    # 3. Flick/swipe berry toward Pokémon center (540, 2050 -> 540, 1400)
-    adb_swipe(540, 2050, 540, 1400, 180)
-    time.sleep(1.2)
+    time.sleep(0.45)
+    # 2. Tap Fruta Frambo (first icon in list at ~220, 1050)
+    adb_tap(220, 1050)
+    time.sleep(0.3)
+    # 3. Quick flick forward to feed Pokémon
+    adb_swipe(540, 1600, 540, 1100, 120)
+    time.sleep(0.9)
 
-def spin_and_collect_stop(x: int, y: int) -> bool:
+def select_great_or_ultra_ball():
+    """Selects Great Ball or Ultra Ball if standard Pokéballs are empty or for tough Pokémon."""
+    # Open ball drawer at bottom-right
+    adb_tap(940, 2150)
+    time.sleep(0.45)
+    # Tap Great Ball (middle slot at 530, 2150)
+    adb_tap(530, 2150)
+    time.sleep(0.3)
+
+def execute_curveball_throw():
+    """Performs an authentic, sharp human curveball spin & flick.
+    Swirls ball counter-clockwise then releases up-right into the target circle.
+    """
+    adb_cmd("shell", "input swipe 540 2150 400 2150 90; input swipe 400 2150 650 1150 130")
     """Taps a pokestop, spins the photodisc ultra-fast (1.0~1.4s total), and closes it."""
     # 1. Tap to open stop
     adb_tap(x, y)

@@ -133,44 +133,42 @@ class AutonomousBot:
             self.resume_walk()
             return False
 
-        # Feed berry if CP is medium/high or configured to increase catch rate
-        use_berry = self.config.get("hunt", {}).get("use_razz_if_cp_above", True)
-        if use_berry and cp > 350:
-            print("🍓 [Combat] Alimentando Pokémon com Fruta Frambo (Razz Berry)...")
-            pogo_driver.feed_berry_in_combat()
+        # 1. Feed Berry immediately (Frambo / Razz Berry)
+        print("🍓 [Combat] Alimentando Pokémon com Fruta Frambo (Razz Berry)...")
+        pogo_driver.feed_berry_in_combat()
 
-        # Fast throwing loop: up to 3 throws if Pokemon broke free
+        # 2. Multi-throw rapid loop:
         for throw_attempt in range(1, 4):
-            print(f"⚔️ [Combat] Arremesso {throw_attempt}/3 com curva...")
+            print(f"⚔️ [Combat] Arremesso {throw_attempt}/3: Curva rápida autêntica...")
             pogo_driver.execute_curveball_throw()
             
-            # Realistic ball shake/wobble interval (human: ~4.5 to 5.5s)
-            time.sleep(4.8)
+            # Realistic ball wobble duration: ~3.8 to 4.2s
+            time.sleep(4.0)
             img_chk = pogo_driver.adb_screencap()
             
-            # If back to map, catch was successful
+            # If returned to map, caught!
             if pogo_driver.is_map_screen(img_chk):
                 self.stats["catches"] += 1
-                print(f"🎉 [Hunt] Captura concluída com sucesso! Total capturados: {self.stats['catches']}")
+                print(f"🎉 [Hunt] Captura concluída! Total: {self.stats['catches']}")
                 self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
                 self.resume_walk()
                 return True
 
-            # If not map, tap screen center to advance past XP animation, then tap bottom checkmark (540, 2330)
-            if not pogo_driver.is_encounter_screen(img_chk):
-                # Tap center to dismiss XP popup
-                pogo_driver.adb_tap(540, 1500)
-                time.sleep(0.7)
-                # Tap bottom checkmark to close summary screen
-                pogo_driver.adb_tap(540, 2330)
-                time.sleep(0.8)
-                img_after = pogo_driver.adb_screencap()
-                if pogo_driver.is_map_screen(img_after):
-                    self.stats["catches"] += 1
-                    print(f"🎉 [Hunt] Captura concluída! Total capturados: {self.stats['catches']}")
-                    self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
-                    self.resume_walk()
-                    return True
+            # If not map, dismiss XP and summary screens
+            pogo_driver.adb_tap(540, 1500)
+            time.sleep(0.4)
+            pogo_driver.adb_tap(540, 2330)
+            time.sleep(0.5)
+            img_after = pogo_driver.adb_screencap()
+            if pogo_driver.is_map_screen(img_after):
+                self.stats["catches"] += 1
+                print(f"🎉 [Hunt] Captura concluída! Total: {self.stats['catches']}")
+                self.publish_status("walking", f"Captura concluída ({self.stats['catches']} total)")
+                self.resume_walk()
+                return True
+
+            # Check if ball broke free and we need a backup ball:
+            if not pogo_driver.is_encounter_screen(img_after):
                 break
 
         self.resume_walk()
